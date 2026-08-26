@@ -60,3 +60,27 @@ def test_atomicity_rollback_on_duplicate_ids(tmp_path):
     # Verify prior content is fully intact (no half-deletion)
     assert len(s.load_items("k8s")) == prior_item_count
     assert s.load_events("k8s") == prior_events
+
+def test_validates_all_entity_types_belong_to_corpus(tmp_path):
+    """Verify validation rejects mismatched corpus for all entity types."""
+    s = Store(tmp_path / "s.sqlite"); s.init_schema()
+
+    # Test mismatched work_item
+    mismatched_item = WorkItem("gitlab:issue-9", "x", "u")
+    with pytest.raises(ValueError, match="work_item id 'gitlab:issue-9' does not belong to corpus 'k8s'"):
+        s.replace_corpus("k8s", [mismatched_item], [], [], [])
+
+    # Test mismatched org_unit
+    mismatched_org = OrgUnit("gitlab:team-a", "Team A")
+    with pytest.raises(ValueError, match="org_unit id 'gitlab:team-a' does not belong to corpus 'k8s'"):
+        s.replace_corpus("k8s", [], [mismatched_org], [], [])
+
+    # Test mismatched milestone
+    mismatched_ms = Milestone("gitlab:v1.0", 1, None, None, {})
+    with pytest.raises(ValueError, match="milestone id 'gitlab:v1.0' does not belong to corpus 'k8s'"):
+        s.replace_corpus("k8s", [], [], [mismatched_ms], [])
+
+    # Test mismatched event (item_id corpus differs from replace_corpus argument)
+    mismatched_event = Event(datetime(2024, 1, 1, tzinfo=UTC), "gitlab:issue-9", EventKind.ACTIVITY, {}, "api")
+    with pytest.raises(ValueError, match="event item_id 'gitlab:issue-9' does not belong to corpus 'k8s'"):
+        s.replace_corpus("k8s", [], [], [], [mismatched_event])

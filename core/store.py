@@ -34,30 +34,34 @@ class Store:
 
     def replace_corpus(self, corpus: str, items: Iterable[WorkItem], org_units: Iterable[OrgUnit],
                        milestones: Iterable[Milestone], events: Iterable[Event]) -> None:
+        # Validation helper: materialize and validate that all ids belong to expected corpus
+        def _validate_corpus_match(label: str, entity_iterable: Iterable, id_attr: str = "id") -> list:
+            entity_list = list(entity_iterable)
+            for entity in entity_list:
+                entity_id = getattr(entity, id_attr)
+                if corpus_of(entity_id) != corpus:
+                    raise ValueError(f"{label} {id_attr} {entity_id!r} does not belong to corpus {corpus!r}")
+            return entity_list
+
+        # Materialize and validate all collections BEFORE touching the database
+        items_list = _validate_corpus_match("work_item", items, "id")
+        org_units_list = _validate_corpus_match("org_unit", org_units, "id")
+        milestones_list = _validate_corpus_match("milestone", milestones, "id")
+        events_list = _validate_corpus_match("event", events, "item_id")
+
+        # Now do the database operations inside the transaction
         c = self.conn
         with c:
             for t in ("work_item", "org_unit", "milestone", "event"):
                 c.execute(f"DELETE FROM {t} WHERE corpus = ?", (corpus,))
-            items_list = list(items)
-            for i in items_list:
-                if corpus_of(i.id) != corpus:
-                    raise ValueError(f"work_item id {i.id!r} does not belong to corpus {corpus!r}")
             c.executemany("INSERT INTO work_item VALUES (?,?,?,?)", [(i.id, corpus_of(i.id), i.title, i.url) for i in items_list])
-            org_units_list = list(org_units)
-            for o in org_units_list:
-                if corpus_of(o.id) != corpus:
-                    raise ValueError(f"org_unit id {o.id!r} does not belong to corpus {corpus!r}")
             c.executemany("INSERT INTO org_unit VALUES (?,?,?)", [(o.id, corpus_of(o.id), o.name) for o in org_units_list])
-            milestones_list = list(milestones)
-            for m in milestones_list:
-                if corpus_of(m.id) != corpus:
-                    raise ValueError(f"milestone id {m.id!r} does not belong to corpus {corpus!r}")
             c.executemany("INSERT INTO milestone VALUES (?,?,?,?,?,?)", [
                 (m.id, corpus_of(m.id), m.ordinal, m.freeze.isoformat() if m.freeze else None,
                  m.release.isoformat() if m.release else None,
                  json.dumps({k: v.isoformat() for k, v in sorted(m.dates.items())})) for m in milestones_list])
             c.executemany("INSERT INTO event VALUES (:ts,:corpus,:item_id,:kind,:payload,:source)",
-                          [e.to_row() for e in sorted(events, key=Event.sort_key)])
+                          [e.to_row() for e in sorted(events_list, key=Event.sort_key)])
 
     def load_items(self, corpus: str) -> list[WorkItem]:
         rows = self.conn.execute("SELECT id,title,url FROM work_item WHERE corpus=? ORDER BY id", (corpus,))
