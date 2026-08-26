@@ -16,6 +16,10 @@ class EventKind:
     ALL = frozenset({TARGET_SET, STATUS_CHANGED, OWNER_CHANGED, DEPENDENCY_CHANGED, ACTIVITY, OUTCOME})
 
 
+# Adapter-output vocabulary, enforced by the conformance suite rather than by Event.__post_init__
+SOURCES = frozenset({"git-history", "calendar", "exceptions", "derived"})
+
+
 def corpus_of(id: str) -> str:
     return id.split(":", 1)[0]
 
