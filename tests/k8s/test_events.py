@@ -49,3 +49,23 @@ def test_activity_events_use_unknown_actor_in_sprint_1():
     evs = activity_events("k8s:kep-100", [(T(1), "a"*40, "ann@example.com")])
     assert evs[0].kind == K.ACTIVITY
     assert evs[0].payload == {"actor_id": "k8s:unknown", "kind": "commit", "ref": "a"*40, "author_email": "ann@example.com"}
+
+# Milestone-stage removal (retracted commitment, e.g. a beta target dropped
+# while alpha is kept) must not be silently invisible to the event stream.
+M1 = 'title: X\nkep-number: 100\nowning-sig: sig-a\nstatus: implementable\nmilestone:\n  alpha: "v1.30"\n  beta: "v1.31"\n'
+M2 = 'title: X\nkep-number: 100\nowning-sig: sig-a\nstatus: implementable\nmilestone:\n  alpha: "v1.30"\n'
+M3 = 'title: X\nkep-number: 100\nowning-sig: sig-a\nstatus: implementable\nmilestone:\n  alpha: "v1.30"\n  beta: "v1.32"\n'
+
+def test_removed_milestone_stage_emits_clear_event():
+    evs = kep_events("k8s:kep-100", [FileVersion("a"*40, T(1), M1), FileVersion("b"*40, T(2), M2)])
+    later = [e for e in evs if e.ts == T(2)]
+    assert [e.payload for e in by_kind(later, K.TARGET_SET)] == [
+        {"stage": "beta", "milestone_id": "k8s:v1.31", "op": "clear"}
+    ]
+
+def test_cleared_stage_reappearing_emits_plain_add():
+    evs = kep_events("k8s:kep-100", [FileVersion("a"*40, T(1), M1), FileVersion("b"*40, T(2), M2), FileVersion("c"*40, T(3), M3)])
+    latest = [e for e in evs if e.ts == T(3)]
+    targets = by_kind(latest, K.TARGET_SET)
+    assert [e.payload for e in targets] == [{"stage": "beta", "milestone_id": "k8s:v1.32"}]
+    assert "op" not in targets[0].payload

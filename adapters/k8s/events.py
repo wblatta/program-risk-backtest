@@ -54,6 +54,13 @@ def kep_events(item_id: str, versions: list[FileVersion]) -> list[Event]:
         for stage, ms in sorted(cur.milestones.items()):
             if prev_ms.get(stage) != ms:
                 out.append(Event(v.ts, item_id, K.TARGET_SET, {"stage": stage, "milestone_id": milestone_id(ms)}, SRC))
+        # A stage present in the previous version but absent from the current one is a
+        # retracted commitment, not a no-op: snapshot() must stop reporting it as targeted
+        # rather than leaving the stale milestone in place forever. Keep the milestone_id
+        # of the milestone being cleared (not None) so downstream TARGET_SET consumers that
+        # key off milestone_id keep working unchanged.
+        for stage in sorted(set(prev_ms) - set(cur.milestones)):
+            out.append(Event(v.ts, item_id, K.TARGET_SET, {"stage": stage, "milestone_id": milestone_id(prev_ms[stage]), "op": "clear"}, SRC))
         if cur.status and (prev is None or prev.status != cur.status):
             out.append(Event(v.ts, item_id, K.STATUS_CHANGED, {"status": cur.status}, SRC))
         out.extend(_diff_owners(item_id, v.ts, _owner_sets(prev) if prev else {}, _owner_sets(cur)))

@@ -83,3 +83,28 @@ def test_last_activity_any_is_none_when_empty():
     s = snapshot(evs, T(2))["k8s:kep-1"]
     assert s.last_activity == {}
     assert s.last_activity_any is None
+
+def test_target_clear_removes_target_but_keeps_history():
+    # A TARGET_SET event with op="clear" retracts a previously-set stage:
+    # the stage must disappear from targets/target_set_at, but the milestone
+    # it was once targeted at stays in target_history (history of what was
+    # targeted is not rewritten by a later retraction).
+    evs = [ev(T(1), K.TARGET_SET, {"stage": "beta", "milestone_id": "k8s:v1.31"}),
+           ev(T(2), K.TARGET_SET, {"stage": "beta", "milestone_id": "k8s:v1.31", "op": "clear"})]
+    s = snapshot(evs, T(3))["k8s:kep-1"]
+    assert "beta" not in s.targets
+    assert "beta" not in s.target_set_at
+    assert s.target_history["beta"] == ["k8s:v1.31"]
+
+def test_target_clear_then_re_add():
+    # A stage cleared and later re-targeted at a new milestone comes back:
+    # snapshot after the re-add reports the new milestone as the current
+    # target, and target_history accumulates both the retracted and the
+    # new milestone in order.
+    evs = [ev(T(1), K.TARGET_SET, {"stage": "beta", "milestone_id": "k8s:v1.31"}),
+           ev(T(2), K.TARGET_SET, {"stage": "beta", "milestone_id": "k8s:v1.31", "op": "clear"}),
+           ev(T(3), K.TARGET_SET, {"stage": "beta", "milestone_id": "k8s:v1.32"})]
+    s = snapshot(evs, T(4))["k8s:kep-1"]
+    assert s.targets["beta"] == "k8s:v1.32"
+    assert s.target_set_at["beta"] == T(3)
+    assert s.target_history["beta"] == ["k8s:v1.31", "k8s:v1.32"]

@@ -46,8 +46,12 @@ def snapshot(events: Iterable[Event], as_of: datetime, *, presorted: bool = Fals
         p = e.payload
         if e.kind == K.TARGET_SET:
             stage = p.get("stage") or ""
-            s.targets[stage] = p["milestone_id"]
-            s.target_set_at[stage] = e.ts
+            if p.get("op") == "clear":
+                s.targets.pop(stage, None)
+                s.target_set_at.pop(stage, None)
+            else:
+                s.targets[stage] = p["milestone_id"]
+                s.target_set_at[stage] = e.ts
             hist = s.target_history.setdefault(stage, [])
             if not hist or hist[-1] != p["milestone_id"]:
                 hist.append(p["milestone_id"])
