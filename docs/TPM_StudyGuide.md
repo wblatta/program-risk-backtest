@@ -113,17 +113,22 @@ leads listed in `sigs.yaml` versus who actually approves PRs.
 Claims made during design without verification. The spike and the reading
 above should confirm or correct each one. Update the design spec when done.
 
-| Claim | Confidence | If wrong |
-|---|---|---|
-| `kep.yaml` has `owning-sig`, `participating-sigs`, `status`, `stage`, `latest-milestone`, `milestone.{alpha,beta,stable}`, `prr-approvers`, `authors`, `reviewers`, `approvers` | High | Adapter field map changes |
-| `sigs.yaml` in `kubernetes/community` is the canonical org chart | High | — |
-| Tracking issues in `kubernetes/enhancements` carry `tracked/yes`, `stage/*`, `sig/*`, `lead-opted-in` labels, and the GitHub timeline API gives label-applied timestamps | High | Signal S0 changes source |
-| `kubernetes/sig-release` has per-release schedule data with freeze and release dates | Medium — exact path unknown | Hand-maintain a small calendar table in the adapter |
-| Exception requests are findable as structured artifacts | Medium-low | Fold `exception_*` outcomes into shipped/slipped and say so |
-| PRR became mandatory around v1.21; earlier cycles are not comparable | Medium | Backtest window shrinks or gets a per-cycle rule |
-| Retrospectives exist per release as markdown in `sig-release` | Medium | Spot-check source becomes release-team meeting notes |
-| The enhancements tracking board has been a GitHub Project recently and a spreadsheet earlier | Medium | Older cycles need a different S0 source or are dropped |
-| SIGs frequently do *not* update `milestone.*` when a KEP misses | Medium — this is the crux | If they reliably do, slippage is cheap to detect; if not, the tracking issue is the primary source |
+The **Verdict** column was filled in at the end of sprint 1 (2026-08-26), after
+the corpus build and the first backtest run. "Confirmed" means the claim was
+checked against the real clones and the path is now in code; "Refuted" means it
+is wrong and the design spec has been amended.
+
+| Claim | Confidence | If wrong | Verdict (sprint 1) |
+|---|---|---|---|
+| `kep.yaml` has `owning-sig`, `participating-sigs`, `status`, `stage`, `latest-milestone`, `milestone.{alpha,beta,stable}`, `prr-approvers`, `authors`, `reviewers`, `approvers` | High | Adapter field map changes | **Partly refuted.** All confirmed except `prr-approvers`, which does not exist in any `kep.yaml` — see the PRR row below. `status` is also not a clean enum (spike findings). |
+| `sigs.yaml` in `kubernetes/community` is the canonical org chart | High | — | **Confirmed.** `sigs.yaml` at the repo root → 24 `org_unit` rows. Caveat: `kep.yaml`'s `owning-sig` is *not* validated against it, so a typo becomes its own org (design spec amendment 9, sprint 1). |
+| Tracking issues in `kubernetes/enhancements` carry `tracked/yes`, `stage/*`, `sig/*`, `lead-opted-in` labels, and the GitHub timeline API gives label-applied timestamps | High | Signal S0 changes source | **Not yet tested.** Labels confirmed to exist (planning amendment 8); the API is sprint-2 work and no timeline call has been made. |
+| `kubernetes/sig-release` has per-release schedule data with freeze and release dates | Medium — exact path unknown | Hand-maintain a small calendar table in the adapter | **Confirmed, with the fallback also used.** Path: `releases/release-1.N/README.md`, a markdown timeline table. Parsed by `adapters/k8s/milestones.py` into `adapters/k8s/calendar.yaml`, which is committed, hand-verified, and is the runtime source of truth — because the format differs by era and v1.19/v1.21/v1.22 contain no year at all (design spec amendment 8, sprint 1). 19 scheduled milestones, v1.19–v1.37. |
+| Exception requests are findable as structured artifacts | Medium-low | Fold `exception_*` outcomes into shipped/slipped and say so | **Confirmed.** Path: `releases/release-1.N/exceptions.yaml` in `kubernetes/sig-release`. Two schemas (flat list before v1.24, `enhancementFreeze`/`codeFreeze` mapping after) plus one unparseable file at v1.20; 161 requests recovered over v1.19–v1.37, yielding 65 `exception_granted` labels and 0 `exception_denied`. See design spec amendment 7, sprint 1. |
+| PRR became mandatory around v1.21; earlier cycles are not comparable | Medium | Backtest window shrinks or gets a per-cycle rule | **Confirmed in shape, unproven in date, and not acted on.** PRR approvers live in `keps/prod-readiness/<sig>/<kep-number>.yaml` (453 files), *not* in `kep.yaml`; the first was added 2020-12-22, at the start of the v1.21 cycle, which is consistent with the claim. Nothing in the data records "mandatory", so the backtest does **not** filter on it: all 19 cycles are run and comparability is reported as a cut instead (design spec amendment 1, sprint 1). |
+| Retrospectives exist per release as markdown in `sig-release` | Medium | Spot-check source becomes release-team meeting notes | **Refuted.** Zero files matching `retro`/`retrospective`/`postmortem` exist anywhere in the `kubernetes/sig-release` clone, and `kubernetes/community` has only contributor-summit and 2016 SIG retros — nothing per release. Sprint 3's label spot-check needs a different source (release-team meeting notes, or the tracking issues themselves). |
+| The enhancements tracking board has been a GitHub Project recently and a spreadsheet earlier | Medium | Older cycles need a different S0 source or are dropped | **Not yet tested.** No board data is used in sprint 1; S0 (`process_tracked`) is unimplemented. |
+| SIGs frequently do *not* update `milestone.*` when a KEP misses | Medium — this is the crux | If they reliably do, slippage is cheap to detect; if not, the tracking issue is the primary source | **Confirmed as a partial failure, and it is the dominant limit on sprint 1.** They update it often enough to detect 370 slips across 1,255 rows (29.5%), but not reliably: the manual label check in `docs/sprint-1-notes.md` found a KEP (`2804-consolidate-workload-controllers-status`) whose `kep.yaml` still targets `stable: v1.27`, was last touched in 2022, and is labeled `shipped` by rule. The tracking issue is therefore required, as predicted — sprint 2. |
 
 ### Spike findings (Task 1 ingestion spike, 2026-08-26)
 

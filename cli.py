@@ -95,7 +95,12 @@ def main(argv=None) -> None:
     sub.add_parser("spike").set_defaults(fn=cmd_spike)
     sub.add_parser("fetch").set_defaults(fn=cmd_fetch)
     sub.add_parser("build").set_defaults(fn=cmd_build)
-    bp = sub.add_parser("backtest"); bp.add_argument("--min-minor", type=int, default=26); bp.set_defaults(fn=cmd_backtest)
+    bp = sub.add_parser("backtest")
+    # Default 0 = every scheduled milestone (v1.19-v1.37), which is what the committed
+    # out/k8s/*.csv were produced from -- a bare `cli.py backtest` must reproduce them.
+    # `--min-minor N` is the opt-in "recent cycles only" cut (see docs/sprint-1-notes.md).
+    bp.add_argument("--min-minor", type=int, default=0)
+    bp.set_defaults(fn=cmd_backtest)
     args = p.parse_args(argv)
     args.fn(args)
 
