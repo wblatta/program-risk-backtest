@@ -1,0 +1,6 @@
+cache/
+!cache/*/llm/
+__pycache__/
+.venv/
+*.egg-info/
+.remember/
