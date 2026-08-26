@@ -53,7 +53,33 @@ Precedence (first match wins):
 
 Outcome `ts` = `M.release` (end-of-day UTC). Source = `derived`.
 
+## exceptions.yaml: schema recovery and one known-missing milestone
+
+`exceptions.yaml` files predating v1.24 (real examples: release-1.10, -1.11, -1.16,
+-1.17, -1.21, -1.22, -1.23) use a different, older schema than the
+`enhancementFreeze:`/`codeFreeze:` mapping shown above: a single flat top-level list,
+with the freeze phase recorded only in a free-text header comment (e.g. `# Enhancements
+Freeze Exceptions requested in 1.21`), never as structured data. `adapters/k8s/exceptions.py`
+recovers these: every request from a flat-list file is still returned, tagged with
+`phase = "unspecified"` rather than a phase parsed out of a comment. This is safe for
+labeling because `outcome_events` builds `exc_by_issue` keyed on issue number alone and
+never reads `phase` — the placeholder is honest bookkeeping, not a guess presented as
+fact. `exceptions.py` also strips U+200B (zero-width space) before parsing — a data-
+cleaning step, not a heuristic — which is what makes release-1.23 (a clean flat list once
+the ZWSP contaminating its header comments is removed) recoverable at all.
+
+**`release-1.20/exceptions.yaml` remains genuinely unparseable** even after ZWSP-stripping
+(a block-mapping error from an unquoted trailing comma inside a nested list) and
+contributes zero requests. Within the scheduled range (v1.19–v1.37), this is the one
+milestone whose exception data is **known-missing** rather than **known-absent**: an
+`exception_granted`/`exception_denied` label can never appear for KEPs targeting
+v1.20's freezes not because no exceptions were requested, but because the record of what
+was requested could not be recovered. `load_exceptions(repo, skipped=[])` surfaces this
+(and any future case like it) as a `SkippedExceptionsFile(milestone_id="k8s:v1.20", ...)`
+so it is never silently invisible to whoever calls it.
+
 Known blind spots in v1: a KEP that silently stops (no retarget, no status change, no
 target clear) is labeled shipped. A KEP whose yaml was updated only after the next cycle
 started is still caught by rule 1 because the rule looks at all later events, not just the
-next cycle.
+next cycle. `release-1.20`'s exception data is unrecoverable (see above) — any label that
+depends on it is silently as-if-no-exception-was-requested, not verified absent.
