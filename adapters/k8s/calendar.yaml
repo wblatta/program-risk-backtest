@@ -58,19 +58,39 @@
   dates: {}
 - id: k8s:v1.19
   ordinal: 19
-  dates: {}
+  dates:
+    code_freeze: '2020-07-09'
+    enhancements_freeze: '2020-05-19'
+    release: '2020-08-26'
+    start: '2020-04-13'
 - id: k8s:v1.20
   ordinal: 20
-  dates: {}
+  dates:
+    code_freeze: '2020-11-12'
+    enhancements_freeze: '2020-10-06'
+    release: '2020-12-08'
+    start: '2020-09-14'
 - id: k8s:v1.21
   ordinal: 21
-  dates: {}
+  dates:
+    code_freeze: '2021-03-09'
+    enhancements_freeze: '2021-02-09'
+    release: '2021-04-08'
+    start: '2021-01-11'
 - id: k8s:v1.22
   ordinal: 22
-  dates: {}
+  dates:
+    code_freeze: '2021-07-08'
+    enhancements_freeze: '2021-05-13'
+    release: '2021-08-04'
+    start: '2021-04-26'
 - id: k8s:v1.23
   ordinal: 23
-  dates: {}
+  dates:
+    code_freeze: '2021-11-16'
+    enhancements_freeze: '2021-09-09'
+    release: '2021-12-07'
+    start: '2021-08-23'
 - id: k8s:v1.24
   ordinal: 24
   dates:
