@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import sqlite3
 from typing import Iterable
-from core.model import Event, Milestone, OrgUnit, WorkItem
+from core.model import Event, Milestone, OrgUnit, WorkItem, corpus_of
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS work_item (id TEXT PRIMARY KEY, corpus TEXT NOT NULL, title TEXT NOT NULL, url TEXT NOT NULL);
@@ -38,12 +38,24 @@ class Store:
         with c:
             for t in ("work_item", "org_unit", "milestone", "event"):
                 c.execute(f"DELETE FROM {t} WHERE corpus = ?", (corpus,))
-            c.executemany("INSERT INTO work_item VALUES (?,?,?,?)", [(i.id, corpus, i.title, i.url) for i in items])
-            c.executemany("INSERT INTO org_unit VALUES (?,?,?)", [(o.id, corpus, o.name) for o in org_units])
+            items_list = list(items)
+            for i in items_list:
+                if corpus_of(i.id) != corpus:
+                    raise ValueError(f"work_item id {i.id!r} does not belong to corpus {corpus!r}")
+            c.executemany("INSERT INTO work_item VALUES (?,?,?,?)", [(i.id, corpus_of(i.id), i.title, i.url) for i in items_list])
+            org_units_list = list(org_units)
+            for o in org_units_list:
+                if corpus_of(o.id) != corpus:
+                    raise ValueError(f"org_unit id {o.id!r} does not belong to corpus {corpus!r}")
+            c.executemany("INSERT INTO org_unit VALUES (?,?,?)", [(o.id, corpus_of(o.id), o.name) for o in org_units_list])
+            milestones_list = list(milestones)
+            for m in milestones_list:
+                if corpus_of(m.id) != corpus:
+                    raise ValueError(f"milestone id {m.id!r} does not belong to corpus {corpus!r}")
             c.executemany("INSERT INTO milestone VALUES (?,?,?,?,?,?)", [
-                (m.id, corpus, m.ordinal, m.freeze.isoformat() if m.freeze else None,
+                (m.id, corpus_of(m.id), m.ordinal, m.freeze.isoformat() if m.freeze else None,
                  m.release.isoformat() if m.release else None,
-                 json.dumps({k: v.isoformat() for k, v in sorted(m.dates.items())})) for m in milestones])
+                 json.dumps({k: v.isoformat() for k, v in sorted(m.dates.items())})) for m in milestones_list])
             c.executemany("INSERT INTO event VALUES (:ts,:corpus,:item_id,:kind,:payload,:source)",
                           [e.to_row() for e in sorted(events, key=Event.sort_key)])
 
