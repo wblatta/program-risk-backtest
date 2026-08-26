@@ -344,3 +344,40 @@ Fallback: if sprints 4–5 slip, the K8s finding ships alone with
 4. How KEP READMEs phrase dependencies — pattern or LLM.
 5. What the cheapest honest definition of `activity` is.
 6. Which cycles are comparable.
+
+## Amendments (planning, 2026-08-26)
+
+Found by fetching real files from the K8s repos while writing the sprint 0–1
+plan. These override the corresponding lines in §3–§5 above.
+
+1. **PRR approvers are not in `kep.yaml`.** They live in
+   `keps/prod-readiness/<sig>/<kep-number>.yaml` as
+   `{alpha: {approver: "@x"}, beta: {...}, stable: {...}}`. The adapter diffs
+   that file's history into `owner_changed` events with `role = prr_approver`
+   and a `stage` payload field.
+2. **Exception requests are structured.** `releases/release-1.N/exceptions.yaml`
+   in `kubernetes/sig-release` (present back to at least 1.26) lists
+   `enhancementFreeze:` and `codeFreeze:` requests with `issue` (= KEP number),
+   `date_requested`, `date_reviewed`, `status`. The `exception_granted` /
+   `exception_denied` outcomes are derivable; §5's `[verify in spike]` on this
+   point is resolved.
+3. **The release calendar is a markdown table** in
+   `releases/release-1.N/README.md` with stable row names (`Start of Release
+   Cycle`, `Begin [Enhancements Freeze]`, `Begin [Code Freeze]`, `v1.N.0
+   released`) and free-text dates. The adapter parses it into a committed,
+   hand-verified `adapters/k8s/calendar.yaml`, which is the source of truth.
+4. **Two freezes.** `Milestone.freeze` is **code freeze** — the delivery
+   deadline lead time is measured against. `Milestone.dates["enhancements_freeze"]`
+   is the commitment point; backtest rows are the targets present in the
+   snapshot at enhancements freeze. Weekly snapshots run from cycle start to
+   code freeze.
+5. **`snapshot()` returns `dict[item_id, ItemState]`**, not a DataFrame.
+   Signals read `ItemState` fields; pandas is used only in backtest metrics.
+6. **Adapter contract gains `work_items()`.** Five calls, not four; conformance
+   check 1 needs the item list.
+7. **Sprint-1 activity has no actor.** Git author emails do not map to GitHub
+   handles reliably, so sprint-1 `activity` events carry `actor_id =
+   k8s:unknown` and S1 fires on "no activity from anyone in N weeks". Sprint 2
+   replaces this with tracking-issue commenters and PR authors from the API.
+8. Tracking-issue labels confirmed for sprint 2: `tracked/yes|no|out-of-tree`,
+   `stage/alpha|beta|stable`, `lead-opted-in`, `sig/*`.
