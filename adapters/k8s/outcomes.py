@@ -33,12 +33,18 @@ def outcome_events(events: list[Event], milestones: list[Milestone], exceptions:
     by_item: dict[str, list[Event]] = {}
     for e in events:
         by_item.setdefault(e.item_id, []).append(e)
-    for m in sorted(milestones, key=lambda x: x.ordinal):
+    ordered = sorted(milestones, key=lambda x: x.ordinal)
+    for i, m in enumerate(ordered):
         ef = m.dates.get("enhancements_freeze")
         if not m.is_scheduled or ef is None or m.release > today:
             continue
         ef_dt = _dt(ef)
-        nxt = next((x for x in milestones if x.ordinal > m.ordinal and x.dates.get("enhancements_freeze")), None)
+        # ordered[i+1:] is ascending by ordinal, so the first entry with an
+        # enhancements_freeze is the *next* one -- not just any later one. Reusing
+        # the sorted list here (rather than re-scanning the caller's `milestones` in
+        # whatever order it arrived in) keeps this consistent with the sort already
+        # done above instead of quietly trusting caller ordering one line later.
+        nxt = next((x for x in ordered[i + 1:] if x.dates.get("enhancements_freeze")), None)
         window_end = _dt(nxt.dates["enhancements_freeze"]) if nxt else _dt(today)
         exc_by_issue = {e.issue: e for e in exceptions.get(m.id, [])}
         for item_id, state in snapshot(events, ef_dt, presorted=True).items():

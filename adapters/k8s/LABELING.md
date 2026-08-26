@@ -15,8 +15,14 @@ Precedence (first match wins):
    the target to a milestone with a higher ordinal than `M`. Only a genuine retarget
    counts: a `TARGET_SET` event with `payload.op == "clear"` is a retraction, not a move,
    and is excluded from this check even though it carries a `milestone_id` (see rule 2).
-2. **dropped** — after `M.enhancements_freeze` and before the next milestone's
-   enhancements freeze (or today, if `M` is the last scheduled milestone), either:
+2. **dropped** — after `M.enhancements_freeze` and no later than the end of the next
+   scheduled milestone's enhancements-freeze day (or today's, if `M` is the last
+   scheduled milestone) — i.e. `event.ts <= window_end`, where `window_end` is that
+   day at end-of-day UTC, consistent with this document's `ts = M.release` end-of-day
+   convention below. "Next" means the scheduled milestone with the smallest ordinal
+   greater than `M`'s, regardless of what order milestones are passed in — not simply
+   the next one encountered in iteration order. Either of the following, within that
+   window:
    - the KEP's status changed to one of `withdrawn`, `rejected`, `deferred`, `replaced`,
      `superseded`, with no retarget (rule 1 still takes precedence); or
    - a `TARGET_SET` clear (`payload.op == "clear"`) for this same `(stage, milestone)` —

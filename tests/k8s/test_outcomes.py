@@ -101,3 +101,41 @@ def test_clear_is_not_misread_as_a_retarget_via_its_milestone_id():
     # either, since the clear's milestone_id != this row's milestone) to "shipped".
     evs = [tgt(T(2024, 5, 1), "alpha", "k8s:v1.31"), clr(T(2024, 6, 20), "alpha", "k8s:v1.32")]
     assert results(outcome_events(evs, MS, {}, TODAY))[("k8s:kep-1", "alpha", "k8s:v1.31")] == "shipped"
+
+
+# --- Precedence pins (structurally safe via if/elif today; pin against a future
+# control-flow refactor flattening the branches) ---
+
+def test_slipped_wins_over_status_based_dropped():
+    evs = [
+        tgt(T(2024, 5, 1), "alpha", "k8s:v1.31"),
+        st(T(2024, 6, 20), "withdrawn"),
+        tgt(T(2024, 7, 20), "alpha", "k8s:v1.32"),
+    ]
+    assert results(outcome_events(evs, MS, {}, TODAY))[("k8s:kep-1", "alpha", "k8s:v1.31")] == "slipped"
+
+def test_dropped_wins_over_exception():
+    evs = [tgt(T(2024, 5, 1), "alpha", "k8s:v1.31"), st(T(2024, 6, 20), "withdrawn")]
+    exc = {"k8s:v1.31": [ExceptionRequest(1, "code_freeze", "approved", None)]}
+    assert results(outcome_events(evs, MS, exc, TODAY))[("k8s:kep-1", "alpha", "k8s:v1.31")] == "dropped"
+
+
+# --- Regression: window_end must use ordinal order, not caller iteration order ---
+
+def test_dropped_window_uses_ordinal_order_not_caller_order():
+    # `nxt` must find the milestone with the smallest ordinal above M -- not just the
+    # first later-ordinal milestone in whatever order the caller passed `milestones`
+    # in. Deliberately shuffled here: if the lookup ever regresses to scanning the
+    # caller's raw list order again, this test starts a later milestone's
+    # enhancements freeze as window_end, silently widening the dropped window.
+    m33 = Milestone("k8s:v1.33", 33, date(2025, 3, 1), date(2025, 4, 1),
+                     {"enhancements_freeze": date(2025, 1, 10), "code_freeze": date(2025, 3, 1), "release": date(2025, 4, 1)})
+    shuffled = [m33, M31, M32]
+    evs = [
+        tgt(T(2024, 5, 1), "alpha", "k8s:v1.31"),
+        # After M32's enhancements freeze (2024-10-04) but well before m33's
+        # (2025-01-10). The correct window_end is M32's freeze, so this status
+        # change is outside the window and must NOT drop the row.
+        st(T(2024, 11, 1), "withdrawn"),
+    ]
+    assert results(outcome_events(evs, shuffled, {}, TODAY))[("k8s:kep-1", "alpha", "k8s:v1.31")] == "shipped"
