@@ -13,19 +13,6 @@ import subprocess
 # of git's "fatal:" messages to tell a real failure from "path absent here".
 _GIT_ENV = {**os.environ, "LC_ALL": "C", "LANGUAGE": "C"}
 
-# Similarity threshold used with --follow when walking a single file's
-# history across renames. KEP files share a large boilerplate YAML template
-# (title/kep-number/authors/status header, PRR-approvers warning block,
-# etc.), so git's default ~50% similarity threshold for rename/copy
-# detection false-positives: it splices together the history of two
-# completely unrelated KEPs whenever their bodies happen to be short enough
-# that the shared boilerplate crosses 50% similarity. Genuine KEP renames
-# (a slug change or a SIG move, both preserving the KEP number) measured on
-# the real kubernetes/enhancements corpus score 90-100% similar; spurious
-# boilerplate-only matches to unrelated KEPs score below that. 90% is high
-# enough to keep the false positives out while still following real renames.
-_FOLLOW_SIMILARITY = "-M90%"
-
 
 @dataclass(frozen=True)
 class FileVersion:
@@ -79,19 +66,46 @@ def _ts(epoch: str) -> datetime:
 
 
 def list_kep_dirs(repo: Path) -> list[str]:
-    out = _git(repo, "ls-files", "keps/*/*/kep.yaml")
+    # git pathspec "*" crosses "/", unlike a Python glob: this deliberately
+    # matches keps/sig-x/N-slug/kep.yaml (the common case) *and*
+    # keps/sig-x/group/N-slug/kep.yaml (KEPs nested under a provider/group
+    # subdirectory, e.g. keps/sig-cloud-provider/azure/2328-.../kep.yaml).
+    # The spec for this function is "contains a kep.yaml", not a fixed
+    # depth, so both must be included -- do not narrow this to a
+    # fixed-depth match (e.g. by switching to a Python glob) without
+    # checking test_list_kep_dirs_includes_nested_group_dirs below.
+    out = _git(repo, "ls-files", "keps/*/kep.yaml")
     dirs = {line.rsplit("/", 1)[0] for line in out.splitlines() if line.startswith("keps/sig-")}
     return sorted(dirs)
 
 
 def _iter_path_at_commit(repo: Path, rel_path: str):
     """Yield (sha, epoch_str, path_in_that_commit) newest-first along
-    first-parent history, following renames per _FOLLOW_SIMILARITY. The
-    path can differ from rel_path for commits before a rename; that is the
-    path git show needs to retrieve the content that existed then.
+    first-parent history, following renames with git's default rename/copy
+    detection (no similarity threshold override). The path can differ from
+    rel_path for commits before a rename; that is the path git show needs
+    to retrieve the content that existed then.
+
+    A rename ("R###" status) means the old path was deleted in this very
+    commit: the same file's identity genuinely continues further back
+    under the old name, so the walk keeps following it. A plain "M" (same
+    path, modified) or "D" (deleted, handled by file_versions below) does
+    not end the identity either -- it says nothing about where the file
+    came from. Any other status ends the identity walk after including
+    this commit's own (correct) content: "A" (added) is a real genesis --
+    git's own log has nothing earlier for that path anyway. "C###" (copy)
+    means the apparent "source" file was *not* deleted -- it is a
+    different, still-living file whose content this commit happened to
+    reuse (KEP authors routinely start a new KEP by copying a similar
+    sibling's file, and KEP files also share enough boilerplate template
+    text that unrelated KEPs can look superficially similar to git's copy
+    heuristic), not a past identity of rel_path. Walking into that copy
+    source's own further history would silently graft an unrelated file's
+    history onto this one -- confirmed on the real kubernetes/enhancements
+    clone, where unbounded --follow does exactly this (see task-5-report.md).
     """
     out = _git(
-        repo, "log", "--first-parent", "--follow", _FOLLOW_SIMILARITY,
+        repo, "log", "--first-parent", "--follow",
         "--name-status", "--format=%x00%H%x09%ct", "--", rel_path,
     )
     for chunk in out.split("\x00"):
@@ -104,11 +118,13 @@ def _iter_path_at_commit(repo: Path, rel_path: str):
         if not line:
             # No diff recorded against the pathspec for this commit (seen
             # only in unusual merge shapes). We cannot say with confidence
-            # which path held the content here, so skip rather than guess.
-            continue
+            # which path held the content here, so stop rather than guess.
+            break
         fields = line.split("\t")
-        path = fields[-1]  # for M/A: the only path; for R###/C###: the new path
+        status, path = fields[0], fields[-1]  # for M/A/D: the only path; for R###/C###: the new path
         yield sha, epoch, path
+        if not (status.startswith(("M", "R", "D"))):
+            break
 
 
 def file_versions(repo: Path, rel_path: str) -> list[FileVersion]:

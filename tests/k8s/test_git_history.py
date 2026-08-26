@@ -36,6 +36,18 @@ def test_list_kep_dirs_only_those_with_kep_yaml(tmp_path):
     ])
     assert list_kep_dirs(repo) == ["keps/sig-a/100-x", "keps/sig-b/200-y"]
 
+def test_list_kep_dirs_includes_nested_group_dirs(tmp_path):
+    # git pathspec "*" crosses "/", so a KEP nested one level deeper under a
+    # provider/group subdirectory (as real KEPs are, e.g.
+    # keps/sig-cloud-provider/azure/2328-.../kep.yaml) must still be found.
+    # The spec is "contains a kep.yaml", not a fixed depth -- this pins that
+    # so a future switch to a depth-limited Python glob fails loudly.
+    repo = make_git_repo(tmp_path / "r", [
+        (T(1), {"keps/sig-a/100-x/kep.yaml": "a",
+                "keps/sig-cloud-provider/azure/200-nested/kep.yaml": "b"}),
+    ])
+    assert list_kep_dirs(repo) == ["keps/sig-a/100-x", "keps/sig-cloud-provider/azure/200-nested"]
+
 def test_dir_activity_lists_every_commit_touching_dir(tmp_path):
     repo = make_git_repo(tmp_path / "r", [
         (T(1), {"keps/sig-a/100-x/kep.yaml": "a"}),
@@ -119,8 +131,10 @@ def test_file_versions_follows_renames(tmp_path):
 def test_file_versions_does_not_graft_unrelated_boilerplate_similar_file(tmp_path):
     # KEPs share a large YAML boilerplate template. Two distinct, unrelated
     # KEPs whose bodies happen to be short enough that the shared boilerplate
-    # crosses git's default rename/copy similarity threshold must not be
-    # spliced into one file's history by --follow.
+    # crosses git's copy-detection heuristic must not be spliced into one
+    # file's history by --follow: git reports this as a "copy" (the earlier
+    # KEP is untouched, not deleted), and a copy's apparent source is a
+    # different, still-living file, not a past identity of the target path.
     boiler = (
         "title: KEP\nkep-number: NUM\nauthors:\n  - \"@someone\"\nowning-sig: sig-x\n"
         "status: provisional\ncreation-date: 2020-01-01\nreviewers:\n  - TBD\n"
@@ -137,6 +151,21 @@ def test_file_versions_does_not_graft_unrelated_boilerplate_similar_file(tmp_pat
     vs = file_versions(repo, "keps/sig-b/900-omega/kep.yaml")
     assert [v.ts for v in vs] == [T(2)]
     assert "alpha" not in vs[0].text
+
+def test_file_versions_includes_own_copy_commit_but_not_sibling_history(tmp_path):
+    # A KEP created by copying a still-living sibling KEP verbatim (a real,
+    # observed authoring pattern) must get its own creation commit as a
+    # version -- that commit's content, under the target path, is genuinely
+    # this KEP's -- but must not pull in the sibling's own earlier history,
+    # since the sibling is a different file that happens to still exist.
+    repo = make_git_repo(tmp_path / "r", [
+        (T(1), {"keps/sig-a/100-source/kep.yaml": "shared content\n"}),
+        (T(2), {"keps/sig-a/200-copy/kep.yaml": "shared content\n"}),  # copied from source; source untouched
+        (T(3), {"keps/sig-a/200-copy/kep.yaml": "edited content\n"}),
+    ])
+    vs = file_versions(repo, "keps/sig-a/200-copy/kep.yaml")
+    assert [v.ts for v in vs] == [T(2), T(3)]
+    assert [v.text for v in vs] == ["shared content\n", "edited content\n"]
 
 def test_real_git_failure_raises_instead_of_looking_empty(tmp_path):
     # A directory that is not a git repo at all must raise, not be silently
