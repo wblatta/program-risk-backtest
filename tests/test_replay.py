@@ -59,3 +59,27 @@ def test_presorted_matches_unsorted_path():
            ev(T(1), K.TARGET_SET, {"stage": "alpha", "milestone_id": "k8s:v1.30"})]
     ordered = sorted(evs, key=Event.sort_key)
     assert snapshot(ordered, T(4), presorted=True) == snapshot(evs, T(4))
+
+def test_same_timestamp_owner_add_remove_remove_wins():
+    # Event.sort_key() breaks ties on json-serialized payload.
+    # For OWNER_CHANGED, "add" < "remove" lexicographically,
+    # so add sorts first and remove applies last — removing the owner.
+    # This tie-break is conservative: ownership reads as absent, so risk signals fire.
+    evs = [ev(T(1), K.OWNER_CHANGED, {"subject_id": "k8s:@a", "role": "author", "op": "add"}),
+           ev(T(1), K.OWNER_CHANGED, {"subject_id": "k8s:@a", "role": "author", "op": "remove"})]
+    s = snapshot(evs, T(2))["k8s:kep-1"]
+    assert s.owners == {"author": set()}
+
+def test_same_timestamp_dep_add_remove_remove_wins():
+    # Same tie-break rule for DEPENDENCY_CHANGED: remove applies last.
+    evs = [ev(T(1), K.DEPENDENCY_CHANGED, {"depends_on_id": "k8s:kep-2", "op": "add"}),
+           ev(T(1), K.DEPENDENCY_CHANGED, {"depends_on_id": "k8s:kep-2", "op": "remove"})]
+    s = snapshot(evs, T(2))["k8s:kep-1"]
+    assert s.deps == set()
+
+def test_last_activity_any_is_none_when_empty():
+    # ItemState.last_activity_any returns None when no activity has been recorded.
+    evs = [ev(T(1), K.TARGET_SET, {"milestone_id": "k8s:v1.30"})]
+    s = snapshot(evs, T(2))["k8s:kep-1"]
+    assert s.last_activity == {}
+    assert s.last_activity_any is None

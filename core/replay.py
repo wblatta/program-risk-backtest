@@ -24,6 +24,16 @@ class ItemState:
 
 
 def snapshot(events: Iterable[Event], as_of: datetime, *, presorted: bool = False) -> dict[str, ItemState]:
+    """Replay non-outcome events up to as_of into per-item state, keyed by item_id.
+
+    Args:
+        events: Event stream to replay.
+        as_of: Cutoff timestamp (inclusive). Events where ts > as_of are excluded.
+        presorted: If True, caller guarantees events are sorted by Event.sort_key().
+                   If False (default), events are sorted internally. When presorted=True with
+                   genuinely unsorted input, results are silently undefined — all last-write-wins
+                   fields (targets, status, owners, deps) will be corrupted.
+    """
     # Sorting is O(n log n) and the hot callers snapshot the same list hundreds of times.
     # They sort once and pass presorted=True; ad-hoc callers get the safe default.
     states: dict[str, ItemState] = {}
@@ -44,6 +54,10 @@ def snapshot(events: Iterable[Event], as_of: datetime, *, presorted: bool = Fals
         elif e.kind == K.STATUS_CHANGED:
             s.status = p["status"]
         elif e.kind == K.OWNER_CHANGED:
+            # Event.sort_key() breaks ties on json-serialized payload. For OWNER_CHANGED,
+            # "add" < "remove" lexicographically, so when add and remove occur at the same
+            # timestamp for the same subject+role, remove applies last. This is conservative
+            # (ownership reads as absent, so risk signals fire) and is pinned by the test suite.
             bucket = s.owners.setdefault(p["role"], set())
             (bucket.add if p["op"] == "add" else bucket.discard)(p["subject_id"])
         elif e.kind == K.DEPENDENCY_CHANGED:
