@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from backtest.run import run_backtest, Row
 from core.config import AdapterConfig
 from core.model import Event, EventKind as K, Milestone
@@ -43,3 +43,38 @@ def test_outcome_before_as_of_is_not_leaked():
 def test_unscheduled_milestones_ignored():
     m = Milestone("x:v32", 32, None, None, {})
     assert run_backtest(base_events(), [M31, m], [], CFG, {}, {"N": 8, "M": 4, "K": 3, "L": 4})[0].milestone_id == "x:v31"
+
+def test_outcome_at_freeze_boundary_excluded_after_included():
+    # Pins the strict `>` in the outcome join: an outcome exactly at freeze_dt must NOT
+    # be joined (it's within the window the signal was allowed to speak in); an outcome
+    # one second later must be. A regression to `>=` would pass every other test.
+    evs_base = [ev(T(5, 1), K.TARGET_SET, {"stage": "alpha", "milestone_id": "x:v31"})]
+    FREEZE_DT = datetime(2024, 7, 10, 23, 59, 59, tzinfo=UTC)
+
+    at_boundary = evs_base + [ev(FREEZE_DT, K.OUTCOME, {"milestone_id": "x:v31", "stage": "alpha", "result": "slipped"})]
+    rows = run_backtest(at_boundary, [M31], [], CFG, {}, {"N": 8, "M": 4, "K": 3, "L": 4})
+    assert rows[0].outcome is None
+
+    just_after = evs_base + [ev(FREEZE_DT + timedelta(seconds=1), K.OUTCOME, {"milestone_id": "x:v31", "stage": "alpha", "result": "slipped"})]
+    rows2 = run_backtest(just_after, [M31], [], CFG, {}, {"N": 8, "M": 4, "K": 3, "L": 4})
+    assert rows2[0].outcome == "slipped"
+
+def test_prior_outcomes_includes_exact_as_of_boundary():
+    # Pins the `bisect_right` slice feeding Context.prior_outcomes: an outcome timestamped
+    # exactly at a weekly as_of must be visible that same week (ts <= as_of), never a week
+    # before, and must never leak an outcome with ts > as_of. A regression to `bisect_left`
+    # would delay visibility by one week without breaking any other test.
+    EXACT = datetime(2024, 6, 3, 23, 59, 59, tzinfo=UTC)   # falls exactly on the weekly grid from start=5/13
+    BEFORE = datetime(2024, 5, 27, 23, 59, 59, tzinfo=UTC)
+    AFTER = datetime(2024, 6, 10, 23, 59, 59, tzinfo=UTC)
+    evs = [ev(T(5, 1), K.TARGET_SET, {"stage": "alpha", "milestone_id": "x:v31"}),
+           ev(EXACT, K.OUTCOME, {"milestone_id": "x:v31", "stage": "alpha", "result": "slipped"})]
+    seen: dict = {}
+    def collect(states, ctx):
+        seen[ctx.as_of] = [e.ts for e in ctx.prior_outcomes]
+        return set()
+    run_backtest(evs, [M31], [], CFG, {"collect": collect}, {"N": 8, "M": 4, "K": 3, "L": 4})
+    assert seen[BEFORE] == []
+    assert seen[EXACT] == [EXACT]
+    assert seen[AFTER] == [EXACT]
+    assert all(ts <= as_of for as_of, tss in seen.items() for ts in tss)
