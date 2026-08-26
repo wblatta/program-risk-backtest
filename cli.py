@@ -68,12 +68,34 @@ def cmd_build(args) -> None:
         print(f"  - {sk.path} ({sk.milestone_id}): {sk.reason}")
 
 
+def cmd_backtest(args) -> None:
+    from adapters.k8s.config import CONFIG
+    from backtest.metrics import by_org, rows_frame, signal_metrics
+    from backtest.run import run_backtest
+    from core.store import Store
+    from signals import SIGNALS
+    from signals.base import DEFAULT_PARAMS
+    s = Store(CACHE / "store.sqlite")
+    ms, orgs, evs = s.load_milestones("k8s"), s.load_org_units("k8s"), s.load_events("k8s")
+    if args.min_minor:
+        ms = [m for m in ms if m.ordinal >= args.min_minor or not m.is_scheduled]
+    rows = run_backtest(evs, ms, orgs, CONFIG, SIGNALS, dict(DEFAULT_PARAMS))
+    out = OUT / "k8s"; out.mkdir(parents=True, exist_ok=True)
+    table = signal_metrics(rows, {m.id: m for m in ms}, L=DEFAULT_PARAMS["L"])
+    table.to_csv(out / "signals.csv", index=False)
+    rows_frame(rows).to_csv(out / "rows.csv", index=False)
+    by_org(rows).to_csv(out / "by_org.csv", index=False)
+    print(f"{len(rows)} rows, {sum(r.outcome is not None for r in rows)} labeled")
+    print(table.to_string(index=False, float_format=lambda x: f"{x:.2f}"))
+
+
 def main(argv=None) -> None:
     p = argparse.ArgumentParser()
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("spike").set_defaults(fn=cmd_spike)
     sub.add_parser("fetch").set_defaults(fn=cmd_fetch)
     sub.add_parser("build").set_defaults(fn=cmd_build)
+    bp = sub.add_parser("backtest"); bp.add_argument("--min-minor", type=int, default=26); bp.set_defaults(fn=cmd_backtest)
     args = p.parse_args(argv)
     args.fn(args)
 
