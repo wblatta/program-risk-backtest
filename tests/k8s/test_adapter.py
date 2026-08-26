@@ -61,6 +61,19 @@ def test_collision_tie_break_by_most_recent_commit(tmp_path):
     assert a.dropped_collision_dirs == [("keps/sig-a/300-early", "keps/sig-b/300-later")]
 
 
+def test_collision_all_losers_falls_back_to_recency_among_all(tmp_path):
+    # Every directory in the group is replaced/superseded: _pick_survivor's
+    # `candidates = [...] or dirs` fallback must still pick deterministically
+    # (by recency among the full group), not raise on an empty candidate list.
+    a = _adapter(tmp_path, [
+        (T(1), {"keps/sig-a/700-first/kep.yaml": _kep(700, status="replaced")}),
+        (T(2), {"keps/sig-b/700-second/kep.yaml": _kep(700, status="superseded")}),
+    ])
+    dirs = dict(a._kep_dirs())
+    assert dirs == {"keps/sig-b/700-second": "k8s:kep-700"}
+    assert a.dropped_collision_dirs == [("keps/sig-a/700-first", "keps/sig-b/700-second")]
+
+
 def test_item_id_uses_kep_number_not_directory_prefix(tmp_path):
     # sig-node/2043-... declares kep-number 1884 in the real corpus; item_id must
     # follow kep-number, but the PRR path is keyed to the *directory's* number

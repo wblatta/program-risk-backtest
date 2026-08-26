@@ -29,7 +29,6 @@ class K8sAdapter:
         self.calendar_path = calendar_path
         self._items: list[WorkItem] | None = None
         self._base_events: list[Event] | None = None
-        self._events: list[Event] | None = None
         self._milestones: list[Milestone] | None = None
         self._dirs: list[tuple[str, str]] | None = None
         # Diagnostics populated as a side effect of _kep_dirs()/_base()/events();
@@ -63,6 +62,11 @@ class K8sAdapter:
             return ""
 
     def _last_commit(self, repo: Path, d: str) -> datetime:
+        # Directory-wide activity, not just kep.yaml's own history: a touch to any
+        # file under the directory (README.md, a PRR doc, etc.) can flip a
+        # collision's recency tie-break, not only an edit to kep.yaml itself. That
+        # is intentional -- "most recent commit" means the directory is still
+        # being maintained -- but it is a subtlety worth calling out explicitly.
         activity = dir_activity(repo, d)
         return activity[-1][0] if activity else datetime.min.replace(tzinfo=timezone.utc)
 
@@ -146,6 +150,13 @@ class K8sAdapter:
                 out += ev.kep_events(item_id, file_versions(repo, f"{d}/kep.yaml"))
                 out += ev.prr_events(item_id, file_versions(repo, f"keps/prod-readiness/{sig}/{dir_num}.yaml"))
                 out += ev.activity_events(item_id, dir_activity(repo, d))
+            # known-milestone filter: drops a TARGET_SET (including a clear -- see
+            # Ruling 5) whose milestone_id is outside the calendar's catalog. On the
+            # real corpus this reads 0, not because the filter is dead code, but
+            # because the committed calendar.yaml enumerates every k8s:v1.0..v1.60
+            # placeholder up front (see milestones.build_milestones's max_minor),
+            # so it only fires for a value truly out of that range (e.g. a typo'd
+            # "v2.1" in some kep.yaml). Counted and printed by `build` regardless.
             known = {m.id for m in self.milestones()}
             kept: list[Event] = []
             dropped = 0
@@ -159,11 +170,15 @@ class K8sAdapter:
         return self._base_events
 
     def events(self) -> list[Event]:
-        if self._events is None:
-            base = self._base()
-            skipped: list[SkippedExceptionsFile] = []
-            exceptions = load_exceptions(self.cache / "sig_release", skipped=skipped)
-            self.skipped_exceptions = skipped
-            outcomes = outcome_events(base, self.milestones(), exceptions, self.today)
-            self._events = sorted(base + outcomes, key=Event.sort_key)
-        return self._events
+        # _base_events is cached (it costs ~84s of rename-following git history
+        # on the real corpus); the outcome layer below is cheap (well under
+        # 0.1s) and is deliberately recomputed on every call rather than also
+        # cached, so the conformance suite's `assert ev == adapter.events()`
+        # determinism check exercises real recomputation instead of returning
+        # the same cached list object to itself.
+        base = self._base()
+        skipped: list[SkippedExceptionsFile] = []
+        exceptions = load_exceptions(self.cache / "sig_release", skipped=skipped)
+        self.skipped_exceptions = skipped
+        outcomes = outcome_events(base, self.milestones(), exceptions, self.today)
+        return sorted(base + outcomes, key=Event.sort_key)
