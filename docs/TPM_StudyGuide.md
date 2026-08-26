@@ -125,6 +125,77 @@ above should confirm or correct each one. Update the design spec when done.
 | The enhancements tracking board has been a GitHub Project recently and a spreadsheet earlier | Medium | Older cycles need a different S0 source or are dropped |
 | SIGs frequently do *not* update `milestone.*` when a KEP misses | Medium — this is the crux | If they reliably do, slippage is cheap to detect; if not, the tracking issue is the primary source |
 
+### Spike findings (Task 1 ingestion spike, 2026-08-26)
+
+Ran `cli.py spike` against a real clone of `kubernetes/enhancements`. Glob
+`keps/sig-*/*/kep.yaml` matched 612 files; 610 parsed, 2 raised errors. (656
+`kep.yaml` files exist under `keps/` in total — the other 44 live under
+`keps/provider-aws/`, `keps/prod-readiness/`, and the `keps/NNNN-kep-template/`
+placeholder, correctly excluded by the sig-prefixed glob.)
+
+Status histogram (610 rows, 11 distinct values):
+`{'implemented': 286, 'implementable': 254, 'provisional': 46, 'withdrawn': 10,
+'replaced': 5, 'rejected': 3, 'deferred': 1, 'superseded': 1,
+'provisional|implementable|implemented|deferred|rejected|withdrawn|replaced': 1,
+'implemented (alpha)': 1, 'imlpemented': 1, 'removed': 1}`
+
+- **`status` is not a clean enum in the wild.** Alongside the 9 expected
+  values, one file has a typo (`imlpemented`,
+  `sig-node/2625-cpumanager-policies-thread-placement`), one has an appended
+  qualifier (`implemented (alpha)`, `sig-instrumentation/1753-logs-sanitization`),
+  and one has the *entire pipe-separated placeholder list from the template*
+  leaked in verbatim (`provisional|implementable|implemented|deferred|rejected|withdrawn|replaced`,
+  `sig-api-machinery/5000-api-linting-crd-schema-tooling`). Any signal/label
+  logic reading `status` must normalize it, not switch on it directly.
+- **The `prr-approvers` claim in the table above is wrong.** Zero of the 612
+  `kep.yaml` files under `keps/sig-*/` contain a `prr-approvers:` key (checked
+  case-insensitively for any `*prr*:` key — none exist). PRR content is a
+  free-text Q&A block under a `# PRR answers` comment, not a structured
+  approver list. `adapters/k8s/config.py`'s `REQUIRED_ROLES = ["prr_approver"]`
+  will need a different extraction source than `kep.yaml` itself (an OWNERS
+  file, a PRR-specific doc, or the tracking issue) — flagging for whichever
+  later task builds that signal.
+- **`kep-number` is not a reliable unique key.** Two live KEP directories both
+  declare `kep-number: 2133`: `sig-cloud-provider/2133-out-of-tree-credential-provider`
+  and `sig-node/2133-kubelet-credential-providers`. Separately, three
+  non-feature process KEPs (`0000-kep-process`, `0000-community-forum`,
+  `0000-anago-to-krel-migration`) all declare `kep-number: 0`. An
+  `item` ID scheme keyed purely on `k8s:kep-{number}` would collide on both.
+  The directory name is the only actually-unique handle in this corpus.
+- **Directory numbering and `kep-number` can disagree for reasons beyond
+  zero-padding.** `sig-network/0752-endpointslices` vs. `kep-number: 752` is
+  the expected cosmetic case. But `sig-node/2043-pod-resource-concrete-assigments`
+  declares `kep-number: 1884` — a real mismatch, not padding — presumably a
+  renumbering where the directory rename and the yaml field drifted apart.
+- **Two files fail to parse outright**, both from the same root cause: PyYAML's
+  implicit timestamp resolver raises a bare `ValueError` (not `yaml.YAMLError`)
+  for a calendrically-invalid `creation-date`, which the original
+  `except yaml.YAMLError` in `parse_kep_yaml` did not catch, crashing the
+  whole spike instead of recording a per-file error:
+  - `sig-api-machinery/4355-coordinated-leader-election/kep.yaml`:
+    `creation-date: 2023-14-05` → `month must be in 1..12, not 14`
+  - `sig-scheduling/5075-dra-consumable-capacity/kep.yaml`:
+    `creation-date: 2025-30-01` → `month must be in 1..12, not 30`
+
+  Fixed by widening the caught exception to `(yaml.YAMLError, ValueError)`,
+  with a regression test (`test_invalid_calendar_date_raises_kep_parse_error`)
+  covering the real-world case.
+- **Confirmed with no surprises:** `title`, `owning-sig`, and `authors` are
+  populated on all 610 parsed KEPs (no empty strings, no empty tuples) —
+  matches the "mandatory in the schema" claim in §1. `owning-sig`,
+  `status`, `stage`, `latest-milestone`, and `milestone.{alpha,beta,stable}`
+  are present and shaped as expected everywhere they appear.
+- **Routinely unset, as expected:** `participating-sigs` is empty for
+  228/610 (37%) KEPs; `milestones` is an empty dict for 142/610 (23%); `stage`
+  and `latest_milestone` are both `None` for 36/610 (6%, plausibly
+  `provisional` KEPs that never got a target release). Consistent with §1's
+  note that "unowned" can't literally happen but hollow/thin metadata can.
+- One stray value worth flagging but not acting on for Task 1 (YAGNI):
+  `sig-api-machinery/1152-less-object-serializations` has
+  `latest-milestone: '0.0'`, which parses cleanly to `"v0.0"` — it isn't in
+  `_PLACEHOLDERS` so it survives, but it reads as an unset sentinel rather
+  than a real release. Revisit if a later task's milestone logic trips on it.
+
 ---
 
 ## 4. Questions to bring back to the design

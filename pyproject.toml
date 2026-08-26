@@ -1,0 +1,15 @@
+[project]
+name = "program-risk-backtest"
+version = "0.0.1"
+requires-python = ">=3.12"
+dependencies = ["pyyaml>=6", "pandas>=2,<3", "numpy>=1.26"]  # pandas 3.x is breaking; numpy is imported directly by backtest/metrics.py
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: needs a populated cache/ (deselect with -m 'not integration')"]
+
+[tool.setuptools]
+packages = ["core", "adapters", "adapters.k8s", "signals", "backtest"]
