@@ -164,3 +164,83 @@ def test_build_milestones_does_not_sweep_short_form_outside_named_minors(tmp_pat
     # NOT be picked up -- short-form parsing is opt-in per named minor only.
     assert by_id["k8s:v1.14"].freeze is None
     assert by_id["k8s:v1.14"].release is None
+
+
+# --- Regression coverage for two silent, load-bearing parsing mechanisms in
+# _first_date/parse_timeline, found by tracing the real release-1.20 README:
+#   1. A decoy row matching the "code freeze" text pattern ("Brace Yourself,
+#      Code Freeze is Coming") sits, in file order, between the real
+#      enhancements-freeze row and the real code-freeze row. Only _EXCLUDE's
+#      "coming" guard keeps it from winning.
+#   2. The v1.20 bullet-summary section states enhancements_freeze,
+#      code_freeze, and release with ABBREVIATED month names ("Oct", "Nov",
+#      "Dec"). _SHORT_DATE's regex matches these lines (it does not validate
+#      month names), but strptime's "%B" rejects the abbreviation and raises
+#      ValueError, which _first_date silently catches and turns into None --
+#      relying on the scan to fall through to the later, full-month-name
+#      table row for the correct value.
+# Both mechanisms are exercised together by the real v1.20 README and are
+# what makes the committed k8s:v1.20 code_freeze (2020-11-12) correct.
+
+CODE_FREEZE_DECOY_TABLE_120 = """\
+| **Begin [Enhancements Freeze]** (EOD PST) | Enhancements Lead | Tue October 6 | week 4 | [master-blocking], [master-informing] |
+| **Call for [Exceptions][Exception]** | Lead | Mon November 2 | | |
+| Brace Yourself, Code Freeze is Coming | Comms / Bug Triage | Mon November 2 | | |
+| **Begin [Code Freeze]** (EOD PST) | Branch Manager | Thu November 12 | week 9 | |
+"""
+
+ABBREV_MONTH_FALLTHROUGH = """\
+- **Thursday, Nov 12th**: Week 9 - [Code Freeze](../release_phases.md#code-freeze)
+| **Begin [Code Freeze]** (EOD PST) | Branch Manager | Thu November 12 | week 9 | |
+"""
+
+# Close to the real release-1.20 README shape: bullet summary (abbreviated
+# months, no year) followed by the full timeline table (full month names,
+# no year, plus the "Brace Yourself, Code Freeze is Coming" decoy row that
+# sits between the real enhancements-freeze and code-freeze rows).
+BULLET_AND_TABLE_120 = """\
+The 1.20 release cycle is proposed as follows:
+
+- **Monday, September 14th**: Week 1 - Release cycle begins
+- **Tuesday, Oct 6th**: Week 4 - [Enhancements Freeze](../release_phases.md#enhancements-freeze)
+- **Thursday, Nov 12th**: Week 9 - [Code Freeze](../release_phases.md#code-freeze)
+- **Tuesday, Dec 8th**: Week 13 - Kubernetes v1.20.0 released
+
+## Timeline
+
+| Start of Release Cycle | Lead | Mon September 14 | week 1 | [master-blocking] |
+| **Begin [Enhancements Freeze]** (EOD PST) | Enhancements Lead | Tue October 6 | week 4 | [master-blocking], [master-informing] |
+| **Call for [Exceptions][Exception]** | Lead | Mon November 2 | | |
+| Brace Yourself, Code Freeze is Coming | Comms / Bug Triage | Mon November 2 | | |
+| **Begin [Code Freeze]** (EOD PST) | Branch Manager | Thu November 12 | week 9 | |
+| **v1.20.0 released** | Branch Manager | Tue December 8 | week 13 | |
+"""
+
+
+def test_code_freeze_decoy_row_is_excluded_real_row_wins():
+    # "Brace Yourself, Code Freeze is Coming" (Nov 2) appears in file order
+    # before "Begin [Code Freeze]" (Nov 12) and matches the same "code
+    # freeze" text pattern. Only the _EXCLUDE "coming" guard keeps it from
+    # being recorded first; the real row must win.
+    d = parse_timeline(CODE_FREEZE_DECOY_TABLE_120, default_year=2020, try_short_form=True)
+    assert d["code_freeze"] == date(2020, 11, 12)
+
+
+def test_abbreviated_month_bullet_falls_through_to_full_month_table_row():
+    # "Thursday, Nov 12th" matches _SHORT_DATE (which does not validate
+    # month names) but fails strptime's "%B" and is silently caught,
+    # returning None for that line. The scan must continue past it to the
+    # later "Thu November 12" row rather than leaving code_freeze unset.
+    d = parse_timeline(ABBREV_MONTH_FALLTHROUGH, default_year=2020, try_short_form=True)
+    assert d["code_freeze"] == date(2020, 11, 12)
+
+
+def test_realistic_bullet_and_table_readme_resolves_all_four_dates():
+    # End-to-end fixture modeled on the real release-1.20 README shape:
+    # every one of start/enhancements_freeze/code_freeze/release is first
+    # stated in the bullet summary with an abbreviated month (unparseable,
+    # silently skipped) and only resolved from the later table row; the
+    # code_freeze row is additionally preceded by the "Coming" decoy.
+    d = parse_timeline(BULLET_AND_TABLE_120, default_year=2020, try_short_form=True)
+    assert d == {"start": date(2020, 9, 14), "enhancements_freeze": date(2020, 10, 6),
+                 "code_freeze": date(2020, 11, 12), "release": date(2020, 12, 8)}
