@@ -59,6 +59,51 @@ Precedence (first match wins):
 
 Outcome `ts` = `M.release` (end-of-day UTC). Source = `derived`.
 
+## Positive class
+
+The five labels above partition into a **positive** and a **negative** class. This
+partition is part of the normative rule — `backtest/run.py`'s `POSITIVE` set implements
+exactly what is stated here, and the two must agree exactly:
+
+| label | class | why |
+|---|---|---|
+| `slipped` | **positive** | the commitment was not met at the milestone it was made for |
+| `dropped` | **positive** | the commitment was abandoned |
+| `exception_denied` | **positive** | the project itself refused to let the deliverable through |
+| `exception_granted` | negative | a **near-miss, not a miss**: the deliverable landed, with the project's explicit consent to land late in the cycle. Counting a granted exception as a failure would score the project's own working escape hatch as a defect. Reported separately as a near-miss rather than folded into either class silently. |
+| `shipped` | negative | the fallthrough — see rule 5, and read "not observed to slip" |
+
+`exception_granted` is the load-bearing one: 65 rows of the first backtest sit in the
+negative class because of it, and moving them would move the base rate off 0.302. It is
+called out here rather than left implicit in the code.
+
+### `exception_denied` is currently unreachable
+
+The positive set has three members but only two of them can occur. **No corpus row can
+ever be labeled `exception_denied` under the precedence above**, so `POSITIVE` is in
+practice `{slipped, dropped}`.
+
+The cause is rule 1's precedence, not missing data. Over v1.19–v1.37 the recovered
+`exceptions.yaml` files hold 161 requests, 33 of them not approved; fifteen of those 33
+correspond to an actual backtest row, and **all fifteen are labeled `slipped`**. A SIG
+refused an exception has to retarget its `kep.yaml`, which produces a genuine `target_set`
+to a higher-ordinal milestone — and rule 1 (slipped) is evaluated before rule 3
+(exception_denied), so the slip wins every time. The label is unreachable for exactly the
+population it was written to describe.
+
+**This is a vocabulary defect, not a measurement one.** All fifteen shadowed rows are
+labeled `slipped`, which is the correct label for a denied-then-retargeted KEP: the
+deliverable did not land at the milestone it was committed to. Under the opposite
+precedence those rows would read `exception_denied` and would still be in the positive
+class. **No row changes class under either ordering**, and no metric in the first backtest
+depends on which one is chosen. What is wrong is that the vocabulary advertises a
+distinction the rule cannot express.
+
+Labeling v2 must settle it one way or the other — either an exception decision outranks
+the retarget it caused, or the label is removed and the reason published. Leaving an
+unreachable member in the vocabulary is worse than either. See spec amendment 10 (sprint 1)
+and `docs/sprint-1-notes.md`.
+
 ## exceptions.yaml: schema recovery and one known-missing milestone
 
 `exceptions.yaml` files predating v1.24 (real examples: release-1.10, -1.11, -1.16,
