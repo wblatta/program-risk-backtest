@@ -252,8 +252,10 @@ across PRR and tracking-format changes]`.
 3. Join rows to outcomes with `ts > freeze`.
 
 **Metrics per signal**: fired, precision, recall, lift (precision ÷ base
-rate), median lead in weeks with IQR, class (`risk` if median lead ≥ L else
-`status`). Bootstrap 95% CIs on precision and lift by resampling rows.
+rate), median lead in weeks with IQR, `lead_class` (`risk` if median lead ≥ L
+else `status`). Bootstrap 95% CIs on precision and lift by resampling rows.
+`lead_class` describes **lead time only** and carries no claim about predictive
+value — a signal with sub-1.0 lift can be `risk`. See sprint-1 amendment 11.
 
 **Cuts**: by org unit, by stage, S0 vs each signal.
 
@@ -269,7 +271,8 @@ rate), median lead in weeks with IQR, class (`risk` if median lead ≥ L else
 
 `register --milestone <id>` runs every signal on `snapshot(now)` and prints
 one line per item with the signals firing, each annotated with its backtest
-precision and class. Split into two sections by class: risk and status.
+precision and `lead_class`. Split into two sections by `lead_class`: risk and
+status.
 Requires a completed backtest for the same corpus.
 
 ## 10. The finding
@@ -522,3 +525,38 @@ unless contradicted here. Every number below is measured on the clone of
     reports 0 of them. §5's precedence must either be reordered in labeling v2
     so an exception decision outranks the retarget it caused, or the label must
     be removed and the reason stated. It is not a data gap.
+
+11. **`signals.csv`'s `class` column is renamed `lead_class`.** §8 defines it on
+    median lead alone (`risk` if median lead ≥ L else `status`) and the
+    implementation is faithful to that, but the name invites reading it as a
+    verdict on whether the signal predicts anything. It does not: on the first
+    backtest `late_target` has lift 0.822 — its whole CI below 1.0, i.e.
+    negatively predictive — and still classes as `risk`, because it fires a
+    median 5.3 weeks out. Naming the column `lead_class` keeps the definition
+    §8 chose and removes the conflation; predictive value is the `lift` column
+    and its CI, and the two must be read together. `register` (§9) splits on
+    `lead_class` for the same reason. Renamed rather than gated on `lift > 1`,
+    because the column genuinely describes lead time and a lead-time fact about
+    a non-predictive signal is still a fact worth reporting.
+
+12. **`by_stage.csv` is specified in §8's committed outputs but is not produced
+    in sprint 1.** `signals.csv`, `rows.csv` and `by_org.csv` are written;
+    `by_stage.csv` is not. The by-stage cut itself was computed and is reported
+    in `docs/sprint-1-notes.md` (alpha 0.299 / beta 0.324 / stable 0.290, flat),
+    so the analysis is not missing — only the committed artifact is. It is a
+    one-line `groupby` on `rows.csv` and is queued for sprint 2 alongside S2,
+    S3 and S6. Recorded here because every other deviation from the spec is
+    recorded here, and an output listed as committed that no command produces
+    should not be discoverable only by running `ls`.
+
+13. **`out/k8s/spike.json` is deleted and is no longer committed.** It was the
+    sprint-0 spike's raw dump of every parsed `kep.yaml` (320KB). It is not in
+    §8's committed-artifacts list, it is fully regenerable with `cli.py spike`,
+    and it had gone stale: it keys rows by *directory name*, which amendment 2
+    superseded when item ids moved to `kep-number`, so it disagrees with
+    `rows.csv` about the identity of the corpus. A stale, uncited, regenerable
+    artifact that contradicts a current one is a liability rather than a
+    record. Deleted, and added to `.gitignore` so a later `cli.py spike` run
+    does not silently re-commit it. Nothing reads it: the spike's *findings*
+    live in the planning amendments and in `calendar.yaml`, both of which are
+    committed and current.

@@ -20,6 +20,19 @@ to support.
 `--min-minor N` restricts to milestones ≥ `v1.N` and is used below as a cut, not
 as the default.
 
+`cli.py build` prints the UTC `today` it used. That value is an input, not
+scenery: `outcome_events` refuses to label any milestone whose release is still
+in the future, so `today` decides how many cycles exist at all. It is read as
+`datetime.now(timezone.utc).date()`, never the machine's local calendar date —
+otherwise the same clone built in California and in Berlin could disagree about
+whether the last cycle is labelable. That drift is not hypothetical: the machine
+these notes were written on was at local 2026-08-26 and UTC 2026-08-27 at the
+time. The committed CSVs were produced at `today = 2026-08-26`, and re-deriving
+every outcome at 2026-08-27 instead yields **1,255 rows with 0 labels
+different** — the switch to UTC is label-neutral on this corpus, because the
+clone contains no events after 2026-08-26 for the extra day to catch. It is
+fixed for the next build, not to correct this one.
+
 ## What was built and what it measures
 
 Sprint 1 delivers the core model (`work_item` / `org_unit` / `milestone` + one
@@ -35,6 +48,19 @@ signal fires is recorded. The outcome is joined only from events with
 `lead` is weeks from first firing to code freeze. Everything a signal reads is
 from `kep.yaml` and `keps/prod-readiness/*.yaml` history; no GitHub API call is
 made anywhere in sprint 1.
+
+The leakage boundary is enforced structurally on all three things a signal can
+read, not just on events. `snapshot()` replays only non-outcome events with
+`ts ≤ as_of`; `Context.prior_outcomes` holds only outcomes with `ts ≤ as_of`;
+and `Context.milestones_by_id` is filtered to `ordinal ≤` the milestone being
+scored. The third one is subtle enough to spell out: the release *calendar* is
+legitimately known in advance — Kubernetes publishes a cycle's schedule at cycle
+start — but what `Milestone.dates` stores is not the published plan, it is where
+each freeze and release actually **ended up**. A signal scoring v1.28 that read
+v1.31's stored `enhancements_freeze` would be reading a fact that did not exist
+yet. No sprint-1 signal reads `milestones_by_id` at all, and applying the filter
+leaves all three committed CSVs byte-identical — it is a guarantee for the next
+signal author, not a correction to these numbers.
 
 ### Corpus as built
 
@@ -66,13 +92,22 @@ in the corpus resolves to a milestone the calendar knows about.
 | dropped | 9 |
 | exception_denied | **0** |
 
-| signal | fired | precision | recall | lift | lift 95% CI | median lead | IQR | class |
+| signal | fired | precision | recall | lift | lift 95% CI | median lead | IQR | lead_class |
 |---|---|---|---|---|---|---|---|---|
 | `hollow_owner` | 561 | 0.396 | 0.586 | **1.310** | 1.214 – 1.413 | 9.3 wks | 5.6 – 9.6 | risk |
 | `prior_slip` | 483 | 0.331 | 0.422 | **1.097** | 1.002 – 1.207 | 8.1 wks | 5.3 – 9.3 | risk |
 | `late_target` | 773 | 0.248 | 0.507 | **0.822** | 0.753 – 0.886 | 5.3 wks | 4.3 – 6.3 | risk |
 
 CIs are 1,000-resample bootstraps over rows, seed 0.
+
+**`lead_class` is a statement about lead time, not about predictive value.** It is
+`risk` when the median lead is ≥ `L` = 4 weeks and `status` otherwise (spec §8), and it
+is computed from the lead column alone. All three signals class as `risk` — including
+`late_target`, whose lift is 0.822 and whose entire CI sits below 1.0. That is not a
+contradiction: `late_target` does fire a median 5.3 weeks before code freeze, it is just
+firing on the *safer* population. Read `lead_class` and `lift` together; neither alone is
+a verdict. (The column was called `class` until this was written down, which is exactly
+how it came to be misread — see spec amendment 11.)
 
 ### Reading these honestly
 
@@ -105,8 +140,13 @@ the sign backwards. A late-add rule as a risk trigger would spend attention on
 the safest population in the corpus.
 
 `late_target` stays in the signal set, reported at lift 0.82. A signal with
-sub-1.0 lift is not a useful risk signal and is not described as one anywhere in
-this repo. It is also not deleted: the negative result is the most transferable
+sub-1.0 lift is not a useful risk signal, and nothing in this repo claims it is
+one — with one wrinkle worth naming rather than papering over: `signals.csv`
+does carry `lead_class = risk` for `late_target`, and so does the table above.
+That column is a lead-time bucket (median lead ≥ `L`), not a claim that the
+signal predicts anything, and it is named `lead_class` precisely so it cannot be
+read as one. No number in this note treats `late_target` as a working risk
+signal. It is also not deleted: the negative result is the most transferable
 thing in this report, because "late adds are risky" is exactly the kind of
 folk-wisdom rule a program office would otherwise adopt for free.
 
@@ -151,6 +191,38 @@ recent cycles are not better-run, they are less finished. Dropping v1.37 moves
 the base rate from 0.302 to 0.323; dropping v1.36 as well moves it to 0.336.
 The honest reading is that **0.302 understates the true slip rate** and that
 the last two cycles should carry a censoring caveat in any published table.
+
+#### Do the conclusions survive dropping them?
+
+Yes — all three, including the sign on `late_target`. Warning about censoring and
+then publishing the censored table anyway is only half a disclosure, so here is the
+other half. Re-running restricted to v1.19–v1.35 gives **1,105 rows at a base rate
+of 0.336**:
+
+| signal | lift, all 19 cycles | lift, v1.19–v1.35 | change |
+|---|---|---|---|
+| `hollow_owner` | 1.310 (1.214 – 1.413) | **1.292** (1.203 – 1.387) | −0.018 |
+| `prior_slip` | 1.097 (1.002 – 1.207) | **1.090** (0.985 – 1.206) | −0.007 |
+| `late_target` | 0.822 (0.753 – 0.886) | **0.821** (0.752 – 0.891) | −0.001 |
+
+Every lift moves by less than 0.02, far inside its own CI. `hollow_owner` still
+clears 1.0 with its lower bound at 1.203; `late_target` is still entirely below 1.0
+at 0.752–0.891 across 675 firings. **The censoring shifts the base rate materially
+(0.302 → 0.336) and the lifts almost not at all**, which is what you would expect if
+the censored cycles are missing slips roughly uniformly across the signal-fired and
+signal-quiet populations rather than differentially — censoring dilutes precision and
+the base rate together, and lift is their ratio.
+
+One thing does change and is worth stating: **`prior_slip`'s CI lower bound falls from
+1.002 to 0.985 and now includes 1.0.** Its point estimate barely moves, so this is not
+a new finding so much as confirmation of the existing one — `prior_slip` was called
+marginal above on a lower bound that cleared no-effect by 0.002, and a cut this mild
+is enough to push it under. Read as: `prior_slip` does not survive as significant,
+which is the conclusion this note already reached by a different route.
+
+This cut is reported, not adopted: the committed CSVs remain the full v1.19–v1.37
+range. Reproduce it by filtering `out/k8s/rows.csv` to `milestone_id` ≤ `k8s:v1.35`,
+or by restricting the milestone list passed to `run_backtest`.
 
 ### Cuts
 
@@ -286,8 +358,12 @@ show which direction the known error pushes.
    are `slipped`, 9 `dropped`, 0 `exception_denied`. The three-way class in
    §8 is aspirational; every number in the results table is really a
    slip-detection number. Separately, the 65 `exception_granted` rows sit in
-   the *negative* class by design (§8: a granted exception is a near-miss, not
-   a miss) — worth knowing when reading a base rate of 0.302.
+   the *negative* class by design (a granted exception is a near-miss, not a
+   miss) — worth knowing when reading a base rate of 0.302. The full
+   positive/negative partition is now stated normatively in
+   `adapters/k8s/LABELING.md` ("Positive class"), which `backtest/run.py`'s
+   `POSITIVE` set cites as its source of truth; it used to live only in spec §8
+   and in this note.
 4. **`exception_denied` is empty because precedence shadows it, not because
    the data is missing.** Over v1.19–v1.37 the recovered `exceptions.yaml`
    files contain 161 requests: 128 approved, 33 not approved. Fifteen of the 33
@@ -317,6 +393,47 @@ show which direction the known error pushes.
    priori values. The sensitivity grid over them (§8) is sprint 2. Nothing here
    is tuned on the test set, and nothing here is robust to the parameters
    either — both statements are currently true.
+10. **`dir_activity` does not follow renames, while `file_versions` does — and
+    `hollow_owner` reads the one that does not.** `file_versions` walks
+    `git log --follow` (spec amendment 4: follow `R`, stop at `C`), so a KEP's
+    *target history* is complete across a directory rename. `dir_activity` is a
+    plain `git log -- <dir>` with no `--follow`, so a renamed KEP's
+    **pre-rename commits are invisible** and `last_activity_any` reads as "no
+    activity" for the whole pre-rename window. `hollow_owner` fires on exactly
+    that condition, so it fires spuriously there.
+
+    Measured: 29 of the 644 KEPs' `kep.yaml` files cross at least one rename;
+    23 of those produce backtest rows, **87 of 1,255 rows (6.9%)**.
+    `hollow_owner`'s fire rate on them is **62.1%** against **43.4%** on the
+    other 1,168 rows. Excluding them entirely moves its lift **1.310 → 1.295**
+    (base rate 0.302 → 0.297) — a real artifact, and a small one relative to
+    the CI half-width of ~0.10. The tighter subset whose weekly observation
+    window actually straddles the rename is 28 rows; 87 is the upper bound,
+    charging every row of an affected KEP.
+
+    Note the *direction*: these rows also carry a higher positive rate (0.368
+    vs 0.297), so the spurious firings partly land on rows that did slip and
+    the artifact inflates `hollow_owner`'s lift only slightly. The code is not
+    changed in sprint 1 — the fix is to give `dir_activity` the same
+    rename-following discipline as `file_versions`, which means re-running the
+    ~10-minute build and re-committing every CSV, and the two functions'
+    inconsistency is the thing to record now. It is inconsistency, not a bug in
+    either function alone: each is individually defensible, and nothing
+    documented that they disagreed.
+11. **The weekly snapshot grid can miss the last few days before code freeze.**
+    Snapshots are taken every 7 days from cycle start, so the final one lands
+    up to **6 days before** code freeze. A signal that first becomes true
+    inside that gap is never observed to fire and the row is scored as
+    unflagged. This costs `hollow_owner` and `prior_slip` almost nothing (both
+    fire a median 8–9 weeks out) but it truncates the very short-lead tail of
+    every signal, and any future signal designed to fire in the last week would
+    be measured as barely firing at all.
+12. **`by_org.csv`'s `slips` and `slip_rate` count the whole positive class,
+    not just `slipped`.** The column names are narrower than the quantity: they
+    are `slipped ∪ dropped ∪ exception_denied`, the same `POSITIVE` set the
+    headline base rate uses. On this corpus the difference is 9 `dropped` rows
+    out of 379 positives, so the numbers are within a rounding error of a true
+    slip rate — but the names should be read as "positive rate".
 
 ## What these numbers cannot support
 
@@ -375,22 +492,47 @@ In priority order, and the first two are the same problem:
    `exception_denied` too: either an exception decision outranks the retarget
    it caused, or the label goes and the reason is published. Leaving an
    unreachable label in the vocabulary is worse than either.
-2. **Land the tracking-issue API data.** `tracked/yes|no|out-of-tree`,
+2. **Widen the `Signal` type to `(item_id, stage)` — before landing S2.** A
+   signal currently returns `set[str]` of *item ids* (`signals/base.py`), but a
+   row is an `(item, stage, milestone)` triple, so `run_backtest` broadcasts one
+   item-level firing across every stage that item targets at that milestone.
+   Measured blast radius today: 7 `(item, milestone)` pairs carry more than one
+   stage, covering **18 of 1,255 rows (1.4%)**. All three sprint-1 signals agree
+   across stages by construction — `hollow_owner` reads item-wide activity,
+   `prior_slip` and `late_target` are `any(...)` over the item's stages — so
+   **no row in the results above is wrong.** The contract was kept for sprint 1
+   deliberately.
+
+   It is a P0 for sprint 2 because **a stage-scoped signal cannot be written
+   correctly against it.** Spec §7's S2 `gate_unassigned` is precisely that
+   case: PRR approval is per-stage, so an S2 that fires for `stable` would be
+   broadcast onto the same item's `alpha` and `beta` rows at that milestone and
+   score them as flagged when they were not — a silent wrong answer, not a
+   visible failure. S3 `cross_org` and S6 `org_overcommitted` are genuinely
+   item-scoped and are unaffected. Widening the type touches `base.py`, the
+   three signal modules, the broadcast in `run_backtest`, and ~18 tests, and
+   forces a re-run and re-commit of the CSVs; do it first, not alongside S2.
+3. **Land the tracking-issue API data.** `tracked/yes|no|out-of-tree`,
    `stage/*`, `lead-opted-in` labels with timeline timestamps. This is the
    source that answers "did it actually land", and it also brings S0
    (`process_tracked`) — the control the whole exercise needs, because a signal
    that cannot beat the project's own status field is not worth reporting.
-3. **Give `activity` real actors.** Tracking-issue commenters and PR authors
+4. **Give `activity` real actors.** Tracking-issue commenters and PR authors
    from the API, so `hollow_owner` can finally test what H1 claims: silence
    *from the listed owners*, not silence from everyone.
-4. **Re-run the ten-row manual check against release notes**, not against
+5. **Re-run the ten-row manual check against release notes**, not against
    `kep.yaml`, and extend it to ~20 rows per cycle for a few cycles. The check
    in this note is bounded by using the same repository as the labeler.
-5. **Sensitivity grid over `N`, `K`, `L`**, reported and not tuned on, plus CIs
+6. **Sensitivity grid over `N`, `K`, `L`**, reported and not tuned on, plus CIs
    on the by-SIG cut or its removal from any published table.
-6. **Decide what to do about censoring.** Either exclude cycles whose release is
+7. **Decide what to do about censoring.** Either exclude cycles whose release is
    within ~6 months, or model the lag. Do not publish v1.36/v1.37 alongside
    mature cycles without a caveat.
 
-Also queued and cheap: S2, S3, S6 (spec §7), and a `by_stage.csv` output, which
-is a one-line `groupby` on `rows.csv`.
+Also queued and cheap: S3 and S6 (spec §7 — **not S2, which is blocked on item 2
+above**), and a `by_stage.csv` output, which is a one-line `groupby` on
+`rows.csv`. `by_stage.csv` is listed among spec §8's committed outputs but is
+not produced in sprint 1; the by-stage cut itself is reported above, only the
+artifact is missing. That deviation is recorded in the spec's sprint-1
+amendments (12), where every other deviation is recorded, rather than being
+discoverable only by listing `out/k8s/`.
