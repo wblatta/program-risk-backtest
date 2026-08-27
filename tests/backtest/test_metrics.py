@@ -19,9 +19,9 @@ def test_metrics_table():
     df = signal_metrics(rows(), MS, L=4, n_boot=200).set_index("signal")
     g = df.loc["good"]
     assert g["fired"] == 2 and g["precision"] == 1.0 and g["recall"] == 1.0 and g["lift"] == 2.0
-    assert g["median_lead_weeks"] == 6.0 and g["class"] == "risk"
+    assert g["median_lead_weeks"] == 6.0 and g["lead_class"] == "risk"
     b = df.loc["bad"]
-    assert b["fired"] == 1 and b["precision"] == 0.0 and b["class"] == "status"
+    assert b["fired"] == 1 and b["precision"] == 0.0 and b["lead_class"] == "status"
     assert "precision_ci_lo" in df.columns and 0 <= g["precision_ci_lo"] <= g["precision_ci_hi"] <= 1
 
 def test_by_org_counts():

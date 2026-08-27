@@ -48,7 +48,13 @@ def signal_metrics(rows: list[Row], milestones_by_id: dict[str, Milestone], L: i
         plo, phi = ci(boots_p); llo, lhi = ci(boots_l)
         out.append({"signal": n, "rows": len(labeled), "base_rate": base, "fired": fired, "precision": prec, "recall": rec,
                     "lift": lift, "median_lead_weeks": med, "lead_q1": q1, "lead_q3": q3,
-                    "class": ("risk" if med >= L else "status") if leads else "n/a",
+                    # Named `lead_class`, not `class`: it is a statement about *lead time*
+                    # only -- "does this fire early enough to act on (>= L weeks)" -- and
+                    # says nothing about whether the signal is predictive. A signal with
+                    # sub-1.0 lift can still be `risk` here (late_target is), which is
+                    # exactly the confusion the old name caused. Predictive value is the
+                    # `lift` column and its CI; read them together.
+                    "lead_class": ("risk" if med >= L else "status") if leads else "n/a",
                     "precision_ci_lo": plo, "precision_ci_hi": phi, "lift_ci_lo": llo, "lift_ci_hi": lhi})
     return pd.DataFrame(out)
 
