@@ -78,3 +78,31 @@ def test_prior_outcomes_includes_exact_as_of_boundary():
     assert seen[EXACT] == [EXACT]
     assert seen[AFTER] == [EXACT]
     assert all(ts <= as_of for as_of, tss in seen.items() for ts in tss)
+
+def test_context_calendar_excludes_future_milestones():
+    # Pins the leakage boundary on Context.milestones_by_id (see signals/base.py). The
+    # calendar handed to a signal must contain the milestone being scored and every
+    # earlier one, and must NOT contain a higher-ordinal milestone -- whose stored
+    # freeze/release dates are post-hoc actuals, not the schedule as published at the
+    # time. Without the filter in run_backtest every milestone is visible at every
+    # as_of and no other test in this file notices.
+    past = Milestone("x:v30", 30, date(2024, 3, 10), date(2024, 4, 13),
+                     {"enhancements_freeze": date(2024, 2, 7)})
+    future = Milestone("x:v32", 32, date(2024, 11, 10), date(2024, 12, 13),
+                       {"enhancements_freeze": date(2024, 10, 7)})
+    # keyed by the milestone being scored: v30 and v32 are themselves scheduled cycles,
+    # so each legitimately sees itself -- only the cross-cycle visibility is the leak.
+    seen: dict[str, set[str]] = {}
+
+    def collect(states, ctx):
+        seen.setdefault(ctx.milestone.id, set()).update(ctx.milestones_by_id)
+        # the ordinal invariant itself, asserted at every weekly snapshot
+        assert all(m.ordinal <= ctx.milestone.ordinal for m in ctx.milestones_by_id.values())
+        return set()
+
+    run_backtest(base_events(), [past, M31, future], [], CFG, {"collect": collect},
+                 {"N": 8, "M": 4, "K": 3, "L": 4})
+    # scoring v31: v30 (earlier) and v31 (itself) visible, v32 (later) not
+    assert seen["x:v31"] == {"x:v30", "x:v31"}
+    # and the earliest cycle cannot see either of its successors
+    assert seen["x:v30"] == {"x:v30"}
