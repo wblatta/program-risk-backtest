@@ -46,6 +46,10 @@ def cmd_build(args) -> None:
     s.init_schema()
     items, orgs, ms, evs = a.work_items(), a.org_units(), a.milestones(), a.events()
     s.replace_corpus("k8s", items, orgs, ms, evs)
+    # `today` (UTC) decides which milestones are labelable at all -- outcome_events skips
+    # any milestone whose release is still in the future -- so it is part of what produced
+    # the committed out/k8s/*.csv and is printed rather than left implicit.
+    print(f"today (UTC): {a.today.isoformat()}")
     kinds: dict[str, int] = {}
     for e in evs:
         kinds[e.kind] = kinds.get(e.kind, 0) + 1

@@ -25,7 +25,14 @@ class K8sAdapter:
 
     def __init__(self, cache_dir: Path, today: date | None = None, calendar_path: Path | None = CALENDAR):
         self.cache = cache_dir / "k8s"
-        self.today = today or date.today()
+        # UTC, not date.today(): every timestamp in the model is UTC (Event.__post_init__
+        # rejects anything else), and `today` gates which milestones are labelable at all
+        # (outcomes.outcome_events skips `m.release > today`). Reading the machine's local
+        # calendar date would make the corpus depend on the operator's timezone -- west of
+        # UTC it lags by a day, so a build run in the evening in California and one run in
+        # Berlin can label a different number of milestones from the same clone. `cli.py
+        # build` prints the value it used so committed outputs stay attributable.
+        self.today = today or datetime.now(timezone.utc).date()
         self.calendar_path = calendar_path
         self._items: list[WorkItem] | None = None
         self._base_events: list[Event] | None = None
