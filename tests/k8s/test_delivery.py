@@ -82,3 +82,9 @@ def test_closure_takes_precedence_over_merge_when_both_hold():
 
 def test_missing_evidence_record_is_not_an_error():
     assert has_evidence(None, START, RELEASE) is None
+
+
+def test_has_evidence_rejects_closure_before_the_cycle_opened():
+    """An issue closed long before this cycle opened cannot be evidence for it."""
+    ev = DeliveryEvidence(closed_at=datetime(2024, 1, 1, tzinfo=UTC), merges=())
+    assert has_evidence(ev, START, RELEASE) is None
