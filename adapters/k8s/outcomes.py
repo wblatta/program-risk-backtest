@@ -4,6 +4,7 @@ from datetime import date, datetime, time, timezone
 from core.model import Event, EventKind as K, Milestone
 from core.replay import snapshot
 from adapters.k8s.exceptions import ExceptionRequest
+from adapters.k8s.delivery import DeliveryEvidence, has_evidence
 
 # "removed" is deliberately NOT in this set -- see LABELING.md ("dropped" section) for why:
 # on the real corpus it marks a KEP whose already-shipped feature was later removed from
@@ -23,7 +24,9 @@ def _kep_number(item_id: str) -> int | None:
         return None
 
 
-def outcome_events(events: list[Event], milestones: list[Milestone], exceptions: dict[str, list[ExceptionRequest]], today: date) -> list[Event]:
+def outcome_events(events: list[Event], milestones: list[Milestone],
+                   exceptions: dict[str, list[ExceptionRequest]], today: date,
+                   delivery: dict[int, "DeliveryEvidence"] | None = None) -> list[Event]:
     by_id = {m.id: m for m in milestones}
     out: list[Event] = []
     events = sorted(events, key=Event.sort_key)
@@ -51,6 +54,7 @@ def outcome_events(events: list[Event], milestones: list[Milestone], exceptions:
             if m.id not in state.targets.values():
                 continue
             later = [e for e in by_item.get(item_id, ()) if e.ts > ef_dt]
+            evidence = None
             for stage, target in state.targets.items():
                 if target != m.id:
                     continue
@@ -94,6 +98,18 @@ def outcome_events(events: list[Event], milestones: list[Milestone], exceptions:
                         elif exc:
                             result = "exception_granted"
                         else:
-                            result = "shipped"
-                out.append(Event(_dt(m.release), item_id, K.OUTCOME, {"milestone_id": m.id, "stage": stage, "result": result}, SRC))
+                            # Rule 5/6. `shipped` is no longer the fallthrough: it
+                            # requires positive evidence the code landed. Without it the
+                            # outcome is UNKNOWN, not failed -- usually nobody linked the
+                            # implementation back to the tracking issue.
+                            evidence = None
+                            if delivery is not None:
+                                start = m.dates.get("start") or m.freeze
+                                evidence = has_evidence(
+                                    delivery.get(_kep_number(item_id)), start, m.release)
+                            result = "shipped" if (delivery is None or evidence) else "unresolved"
+                out.append(Event(_dt(m.release), item_id, K.OUTCOME,
+                                 {"milestone_id": m.id, "stage": stage, "result": result,
+                                  "evidence": evidence if result == "shipped" else None},
+                                 SRC))
     return out
