@@ -109,13 +109,25 @@ ids now matches nothing and fires on no row, deliberately, so the mistake fails 
 Two derived analyses in the sprint-1 notes were computed against the pre-widening
 figures and are **not** recomputed here:
 
-- The 69-row false-`shipped` reclassification sensitivity. Re-running the criterion as
-  the notes state it — HEAD `latest-milestone` earlier than the row's milestone, and
-  status not any spelling of `implemented` — yields **10 rows across 5 KEPs**, not 69
-  across 48. The set could not be regenerated, so its sensitivity table was left alone
-  rather than rewritten with numbers derived from a different population. The
-  discrepancy predates this change and is worth resolving before that bound is cited
-  again.
+- The 69-row false-`shipped` reclassification sensitivity. Its input set is unchanged —
+  the widening moved `first_fired` only, and the `shipped` population is still 811 — but
+  both endpoints of the sensitivity table moved with the corrected firings.
+
+  **A note on an error in an earlier draft of this file:** it reported that the criterion
+  could not be reproduced, yielding 10 rows across 5 KEPs rather than 69 across 48, and
+  flagged the published bound as unverifiable. That was wrong, and the fault was in the
+  reproduction. The check for "any spelling of `implemented`" was a substring test, and
+  `"implement" in "implementable"` is `True` — so 59 rows whose status is `implementable`
+  were silently excluded. `implementable` means *ready to be implemented*: the opposite of
+  shipped, and precisely the rows the bound exists to catch. Matching the status properly
+  gives **69 rows across 48 KEPs**, exactly as the sprint-1 notes state. The criterion as
+  written there is correct and reproducible.
+
+  The hazard is one this project already documented — `kep.yaml` statuses are dirty, and
+  the sprint-1 notes single out `2625-cpumanager-policies-thread-placement` as "the row
+  that would break any code switching on `status` literally". A substring test over that
+  vocabulary is the same mistake in a different costume.
+
 - The rename-artifact bound (`hollow_owner` 1.310 → 1.295). Its input set is unchanged,
   but both endpoints moved.
 
