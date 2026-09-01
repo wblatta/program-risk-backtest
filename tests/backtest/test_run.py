@@ -11,9 +11,12 @@ CFG = AdapterConfig("x", ())
 
 def ev(ts, kind, payload, item="x:i1"): return Event(ts, item, kind, payload, "t")
 
-def always(states, ctx): return set(states)
+def _all_stages(states):
+    return {(i, st) for i, s in states.items() for st in s.targets}
+
+def always(states, ctx): return _all_stages(states)
 def never(states, ctx): return set()
-def after_june(states, ctx): return set(states) if ctx.as_of >= T(6, 1) else set()
+def after_june(states, ctx): return _all_stages(states) if ctx.as_of >= T(6, 1) else set()
 
 def base_events():
     return [ev(T(5, 1), K.TARGET_SET, {"stage": "alpha", "milestone_id": "x:v31"}),
@@ -106,3 +109,22 @@ def test_context_calendar_excludes_future_milestones():
     assert seen["x:v31"] == {"x:v30", "x:v31"}
     # and the earliest cycle cannot see either of its successors
     assert seen["x:v30"] == {"x:v30"}
+
+
+def test_signal_firing_is_scoped_to_the_stage_it_names():
+    """A signal that fires for one stage must not flag the item's other stages.
+
+    Fails under the item-scoped contract, where run_backtest broadcast a bare
+    item id across every stage that item targeted at the milestone.
+    """
+    evs = [ev(T(5, 1), K.TARGET_SET, {"stage": "alpha", "milestone_id": "x:v31"}),
+           ev(T(5, 1), K.TARGET_SET, {"stage": "beta", "milestone_id": "x:v31"})]
+
+    def beta_only(states, ctx):
+        return {(i, "beta") for i in states}
+
+    rows = run_backtest(evs, [M31], [], CFG, {"beta_only": beta_only}, {"N": 8, "M": 4, "K": 3, "L": 4})
+    fired = {r.stage: r.first_fired["beta_only"] for r in rows}
+    assert set(fired) == {"alpha", "beta"}
+    assert fired["beta"] is not None, "signal named beta; beta row should be flagged"
+    assert fired["alpha"] is None, "signal never named alpha; alpha row must not be flagged"
