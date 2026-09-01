@@ -24,7 +24,7 @@ A row is `(item, stage, milestone)`. Two independent sources answer "did the cod
 
 | evidence | definition | P(e \| shipped) | P(e \| slipped) |
 |---|---|---|---|
-| **closure** | the KEP's tracking issue closed within 90 days of the milestone's release | 21.6% | 0.8% |
+| **closure** | the KEP's tracking issue closed between cycle start and 90 days after the milestone's release | 21.6% | 0.8% |
 | **merge** | a `kubernetes/kubernetes` PR cross-referenced from that issue merged between cycle start and release | 24.0% | 6.5% |
 | **either** | union of the two | **43.4%** | **7.0%** |
 
@@ -131,7 +131,10 @@ it is the reason S8 is specified after the labeling change rather than alongside
   therefore disproportionately excluded from the evidenced cut. Any per-stage reading must
   say so.
 - **Closure is coarse.** An issue closes once, at the end of the KEP's life; attributing
-  that to a specific milestone uses a 90-day window, which is a heuristic.
+  that to a specific milestone uses a window bounded below by cycle start and above by
+  release + 90 days. The upper bound is a heuristic. The lower bound is not optional:
+  without it, 22 rows on the real corpus took closure that predated their cycle by up
+  to sixteen months as evidence of delivery within it.
 - **A merged PR is not proof the feature shipped in that release.** It is proof code
   landed in the window. Reverts, feature gates left off, and partial implementations are
   all invisible.
