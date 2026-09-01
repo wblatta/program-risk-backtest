@@ -138,3 +138,22 @@ def test_clear_event_keeps_a_known_milestone_id(tmp_path):
     assert clears, "expected a clear event"
     assert clears[0].payload["milestone_id"] == "k8s:v1.31"
     assert clears[0].payload["milestone_id"] in ms
+
+
+# --- Task 3: evidence wiring ---
+
+def test_adapter_labels_unresolved_without_delivery_evidence(tmp_path):
+    """With a github cache present but empty, a committed target with no evidence
+    must come back `unresolved` rather than `shipped`."""
+    from adapters.k8s.adapter import K8sAdapter
+    from core.model import EventKind as K
+    a = _adapter(
+        tmp_path,
+        [(T(1), {"keps/sig-a/500-x/kep.yaml": _kep(500, extra='milestone:\n  alpha: "v1.31"\n')})],
+        sig_release_commits=[(T(1), {"releases/release-1.31/README.md": README_131})],
+    )
+    (tmp_path / "cache" / "k8s" / "github" / "issues").mkdir(parents=True, exist_ok=True)
+    (tmp_path / "cache" / "k8s" / "github" / "timeline").mkdir(parents=True, exist_ok=True)
+    results = {e.payload["result"] for e in a.events() if e.kind == K.OUTCOME}
+    assert "shipped" not in results
+    assert "unresolved" in results

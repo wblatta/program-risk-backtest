@@ -5,6 +5,7 @@ from pathlib import Path
 from core.model import Event, EventKind as K, Milestone, OrgUnit, WorkItem
 from adapters.k8s import events as ev
 from adapters.k8s.config import CONFIG, REPOS
+from adapters.k8s.delivery import load_delivery_evidence
 from adapters.k8s.exceptions import SkippedExceptionsFile, load_exceptions
 from adapters.k8s.fetch import clone_or_update
 from adapters.k8s.git_history import dir_activity, file_versions, list_kep_dirs
@@ -187,5 +188,8 @@ class K8sAdapter:
         skipped: list[SkippedExceptionsFile] = []
         exceptions = load_exceptions(self.cache / "sig_release", skipped=skipped)
         self.skipped_exceptions = skipped
-        outcomes = outcome_events(base, self.milestones(), exceptions, self.today)
+        gh = self.cache / "github"
+        delivery = load_delivery_evidence(gh) if (gh / "issues").is_dir() else None
+        outcomes = outcome_events(base, self.milestones(), exceptions, self.today,
+                                  delivery=delivery)
         return sorted(base + outcomes, key=Event.sort_key)
