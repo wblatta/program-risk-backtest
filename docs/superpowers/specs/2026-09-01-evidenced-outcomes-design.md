@@ -24,18 +24,21 @@ A row is `(item, stage, milestone)`. Two independent sources answer "did the cod
 
 | evidence | definition | P(e \| shipped) | P(e \| slipped) |
 |---|---|---|---|
-| **closure** | the KEP's tracking issue closed between cycle start and 90 days after the milestone's release | 21.6% | 0.8% |
-| **merge** | a `kubernetes/kubernetes` PR cross-referenced from that issue merged between cycle start and release | 24.0% | 6.5% |
-| **either** | union of the two | **43.4%** | **7.0%** |
+| **closure** | the KEP's tracking issue closed between cycle start and 90 days after the milestone's release | 18.9% | 0.8% |
+| **merge** | a `kubernetes/kubernetes` PR cross-referenced from that issue merged between cycle start and release | 21.8% | 6.5% |
+| **either** | union of the two | **40.7%** | **7.0%** |
 
 They are complementary, not redundant — the intersection is 2.2%, and their stage
 profiles are inverse:
 
 | stage | closure | merge | union |
 |---|---|---|---|
-| `alpha` | 3.5% | 45.5% | 48.2% |
-| `beta` | 4.2% | 18.0% | 22.2% |
-| `stable` | 53.9% | 10.2% | 58.5% |
+| `alpha` | — | — | 47.9% |
+| `beta` | — | — | 18.8% |
+| `stable` | — | — | 54.2% |
+
+All figures re-measured after the closure window was bounded below at cycle start; the
+earlier 43.4%/48.2%/22.2%/58.5% set was computed with a one-sided window and is stale.
 
 A tracking issue spans a KEP's whole lifecycle and closes when the KEP *finishes*, so
 closure is evidence about the final stage. Implementation PRs cluster at first delivery,
@@ -74,7 +77,7 @@ positive nor negative; how it is handled is the subject of §4.
 
 Every result is reported twice, side by side:
 
-- **Evidenced cut** — `unresolved` rows excluded. Roughly 796 rows, every label backed by
+- **Evidenced cut** — `unresolved` rows excluded. Roughly 774 rows, every label backed by
   evidence. This is the headline.
 - **Full cut** — `unresolved` treated as negative (not delivered). All 1,255 rows.
 
@@ -127,7 +130,7 @@ it is the reason S8 is specified after the labeling change rather than alongside
 - **Coverage is capped by the source.** Only 306 of 644 KEPs have any merged
   cross-referenced PR. A KEP whose implementation never referenced its tracking issue is
   invisible to the merge rule no matter how the window is tuned.
-- **`beta` remains weakest** at 22.2%. Its rows are disproportionately `unresolved` and
+- **`beta` remains weakest** at 18.8%. Its rows are disproportionately `unresolved` and
   therefore disproportionately excluded from the evidenced cut. Any per-stage reading must
   say so.
 - **Closure is coarse.** An issue closes once, at the end of the KEP's life; attributing
