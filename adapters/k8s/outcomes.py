@@ -104,9 +104,15 @@ def outcome_events(events: list[Event], milestones: list[Milestone],
                             # implementation back to the tracking issue.
                             evidence = None
                             if delivery is not None:
-                                start = m.dates.get("start") or m.freeze
-                                evidence = has_evidence(
-                                    delivery.get(_kep_number(item_id)), start, m.release)
+                                # No `or m.freeze` fallback: `freeze` is the CODE freeze,
+                                # near the end of the cycle, not its start. Substituting it
+                                # would shrink the evidence window instead of widening it,
+                                # silently suppressing real evidence. Absent `start`, treat
+                                # the row as having no evidence rather than mis-windowing it.
+                                start = m.dates.get("start")
+                                if start is not None:
+                                    evidence = has_evidence(
+                                        delivery.get(_kep_number(item_id)), start, m.release)
                             result = "shipped" if (delivery is None or evidence) else "unresolved"
                 out.append(Event(_dt(m.release), item_id, K.OUTCOME,
                                  {"milestone_id": m.id, "stage": stage, "result": result,

@@ -54,7 +54,8 @@ Precedence (first match wins):
    number, i.e. `_kep_number(item_id)`) with status not `approved`.
 4. **exception_granted** — `exceptions.yaml` for `M` lists this KEP with status `approved`.
 5. **shipped** — positive evidence the code landed for this milestone:
-   - the tracking issue closed within 90 days of the milestone's release, or
+   - the tracking issue closed between cycle start and 90 days after the milestone's
+     release, or
    - a `kubernetes/kubernetes` PR cross-referenced from that issue merged between
      cycle start and release.
 
@@ -66,9 +67,10 @@ Precedence (first match wins):
    **This is not a synonym for failure.** It means the outcome is unknown to this
    instrument. The usual cause is that nobody linked the implementation back to the
    tracking issue, not that the work stopped. Measured coverage: evidence exists for
-   43.4% of rows that v1 called shipped, and for 7.0% of rows it called slipped.
-   Coverage is uneven by stage — `alpha` 48.2%, `beta` 22.2%, `stable` 58.5% — because
-   closure is evidence about a KEP's final stage and merges about its first.
+   40.7% of rows that v1 called shipped (330/811), and for 7.0% of rows it called
+   slipped (26/370). Coverage is uneven by stage — `alpha` 47.9% (123/257), `beta`
+   18.8% (49/261), `stable` 54.2% (154/284) — because closure is evidence about a
+   KEP's final stage and merges about its first.
 
    `unresolved` is neither positive nor negative. `POSITIVE` remains
    `{slipped, dropped, exception_denied}`.
