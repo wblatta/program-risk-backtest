@@ -93,12 +93,53 @@ def cmd_backtest(args) -> None:
     print(table.to_string(index=False, float_format=lambda x: f"{x:.2f}"))
 
 
+
+def cmd_fetch_issues(args) -> None:
+    """Fetch KEP tracking issues + label timelines into cache/k8s/github/.
+
+    Needs a token: unauthenticated GitHub allows 60 requests/hour and a full pass is
+    ~1,300, so an unauthenticated run would take most of a day. With a token the budget
+    is 5,000/hour and a cold pass fits inside one hour; re-runs read from disk.
+    """
+    import os
+    from adapters.k8s.github import GitHubClient
+    from adapters.k8s.tracking import fetch_tracking
+    from adapters.k8s.adapter import K8sAdapter
+
+    token = os.environ.get(args.token_env)
+    if not token:
+        print(f"No token in ${args.token_env}. Unauthenticated is 60 req/hour; a full pass needs ~1300.")
+        print(f"  export {args.token_env}=<a token with public_repo scope>   then re-run")
+        if not args.allow_unauthenticated:
+            return
+
+    numbers = sorted({int(i.rsplit("-", 1)[1]) for _, i in K8sAdapter(CACHE)._kep_dirs()})
+    if args.limit:
+        numbers = numbers[:args.limit]
+    client = GitHubClient(token=token, reserve=args.reserve)
+    dest = CACHE / "k8s" / "github"
+    print(f"fetching {len(numbers)} tracking issues into {dest} ...")
+    recs, stopped = fetch_tracking(dest, numbers, client)
+    print(f"  {len(recs)}/{len(numbers)} complete | requests={client.requests_made} "
+          f"(304s={client.not_modified}) | budget remaining={client.remaining}")
+    if stopped:
+        reset = client.reset_at.isoformat() if client.reset_at else "unknown"
+        print(f"  stopped early to stay clear of the rate limit; budget resets at {reset}.")
+        print(f"  everything fetched is on disk -- re-run to resume where it left off.")
+
+
 def main(argv=None) -> None:
     p = argparse.ArgumentParser()
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("spike").set_defaults(fn=cmd_spike)
     sub.add_parser("fetch").set_defaults(fn=cmd_fetch)
     sub.add_parser("build").set_defaults(fn=cmd_build)
+    fi = sub.add_parser("fetch-issues")
+    fi.add_argument("--limit", type=int, default=0, help="only the first N KEPs")
+    fi.add_argument("--token-env", default="GITHUB_TOKEN")
+    fi.add_argument("--reserve", type=int, default=50, help="stop with this much budget left")
+    fi.add_argument("--allow-unauthenticated", action="store_true")
+    fi.set_defaults(fn=cmd_fetch_issues)
     bp = sub.add_parser("backtest")
     # Default 0 = every scheduled milestone (v1.19-v1.37), which is what the committed
     # out/k8s/*.csv were produced from -- a bare `cli.py backtest` must reproduce them.
