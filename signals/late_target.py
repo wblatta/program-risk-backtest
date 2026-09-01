@@ -12,6 +12,6 @@ def late_target(states: dict[str, ItemState], ctx: Context) -> set[str]:
     if commit_date is None:
         return set()
     cutoff = datetime.combine(commit_date, time(0, 0), tzinfo=timezone.utc) - ctx.weeks("K")
-    return {item_id for item_id, s in states.items()
-            if any(s.target_set_at.get(stage) is not None and s.target_set_at[stage] >= cutoff
-                   for stage in targets_at(s, m.id))}
+    return {(item_id, stage) for item_id, s in states.items()
+            for stage in targets_at(s, m.id)
+            if s.target_set_at.get(stage) is not None and s.target_set_at[stage] >= cutoff}

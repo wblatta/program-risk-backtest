@@ -19,14 +19,14 @@ def item(last_activity=None, target=True):
 
 def test_fires_when_no_activity_in_N_weeks():
     s = item(last_activity=datetime(2024, 3, 1, tzinfo=UTC))
-    assert hollow_owner({"x:i": s}, ctx(datetime(2024, 6, 1, tzinfo=UTC))) == {"x:i"}
+    assert hollow_owner({"x:i": s}, ctx(datetime(2024, 6, 1, tzinfo=UTC))) == {("x:i", "alpha")}
 
 def test_quiet_when_recent_activity():
     s = item(last_activity=datetime(2024, 5, 20, tzinfo=UTC))
     assert hollow_owner({"x:i": s}, ctx(datetime(2024, 6, 1, tzinfo=UTC))) == set()
 
 def test_fires_when_never_active():
-    assert hollow_owner({"x:i": item()}, ctx(datetime(2024, 6, 1, tzinfo=UTC))) == {"x:i"}
+    assert hollow_owner({"x:i": item()}, ctx(datetime(2024, 6, 1, tzinfo=UTC))) == {("x:i", "alpha")}
 
 def test_ignores_items_not_targeting_milestone():
     s = item(target=False)

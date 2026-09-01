@@ -66,9 +66,9 @@ def run_backtest(events: list[Event], milestones: list[Milestone], org_units: li
             ctx = Context(as_of, m, visible, org_units, config, dict(params), prior)
             for name, fn in signals.items():
                 fired = fn(states, ctx)
-                for (iid, st) in committed:
-                    if iid in fired and first[(iid, st)][name] is None:
-                        first[(iid, st)][name] = as_of
+                for key in committed:
+                    if key in fired and first[key][name] is None:
+                        first[key][name] = as_of
             as_of += timedelta(weeks=1)
         final = snapshot(events, commit_dt, presorted=True)
         for (iid, st) in sorted(committed):

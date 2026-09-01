@@ -12,7 +12,7 @@ CTX = Context(datetime(2024, 6, 1, tzinfo=UTC), M, {M.id: M}, [], AdapterConfig(
 def test_fires_when_stage_was_retargeted_before():
     s = ItemState("x:i", datetime(2024, 1, 1, tzinfo=UTC))
     s.targets["alpha"] = "x:v2"; s.target_history["alpha"] = ["x:v1", "x:v2"]
-    assert prior_slip({"x:i": s}, CTX) == {"x:i"}
+    assert prior_slip({"x:i": s}, CTX) == {("x:i", "alpha")}
 
 def test_quiet_on_first_target():
     s = ItemState("x:i", datetime(2024, 1, 1, tzinfo=UTC))

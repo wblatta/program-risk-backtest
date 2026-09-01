@@ -50,32 +50,32 @@ class Context:
 
 # GRANULARITY CONTRACT -- read before writing a new signal.
 #
-# A signal returns a set of *item ids*. The unit of analysis, though, is the
-# `(item, stage, milestone)` triple of `backtest.run.Row`, so `run_backtest` takes each
-# item id a signal returns and **broadcasts it across every stage that item targets at
-# that milestone**. Signals are therefore item-scoped; they cannot say "fires for beta but
-# not for stable".
+# A signal returns a set of `(item_id, stage)` pairs, matching the
+# `(item, stage, milestone)` unit of analysis in `backtest.run.Row`. A firing names
+# exactly the rows it applies to; `run_backtest` matches those pairs against the
+# committed set and nothing is broadcast. A signal may therefore fire for `beta` and
+# not for `stable` on the same item at the same milestone.
 #
-# Blast radius, measured on the first backtest: 7 `(item, milestone)` pairs carry more
-# than one stage, covering 18 of 1,255 rows (1.4%). All three sprint-1 signals agree
-# across stages by construction -- `hollow_owner` reads item-wide activity, `prior_slip`
-# and `late_target` are `any(...)` over the item's stages at this milestone -- so **no row
-# is wrong today**. This is a latent constraint, not a live bug, and it is kept for
-# sprint 1 deliberately rather than by oversight.
+# Emit one pair per stage the firing genuinely covers:
+#   - An item-scoped condition (`hollow_owner` reads item-wide activity) still emits a
+#     pair for *every* stage that item targets at this milestone -- the condition is
+#     item-wide, but the firing names rows.
+#   - A stage-scoped condition (`prior_slip`, `late_target`) emits only the qualifying
+#     stages. Do not reintroduce an `any(...)` over stages: that was the item-scoped
+#     shape, and it silently flagged stages that did not qualify.
 #
-# **A stage-scoped signal cannot be written correctly against this contract.** The
-# concrete case is spec §7's S2 `gate_unassigned` -- a required approval role (see
-# `AdapterConfig`'s corpus-declared required roles) still unfilled M weeks out. Those
-# roles are granted *per stage*, so an S2 that correctly fires for one stage would be
-# silently broadcast onto that item's other stages at the same milestone and score them
-# as flagged when they were not: a wrong answer that looks like a normal one, with no
-# failure to notice. S3 `cross_org` and S6 `org_overcommitted` are genuinely item-scoped
-# and are unaffected.
+# Use `targets_at(state, milestone_id)` to get the stages an item targets here. A signal
+# that returns bare item ids will match nothing and fire on no row -- there is no
+# fallback, deliberately, so the mistake fails visibly rather than scoring wrong rows.
 #
-# Sprint 2 P0 (see docs/sprint-1-notes.md, "What sprint 2 must do"): widen this to
-# `set[tuple[str, str]]` -- `(item_id, stage)` -- *before* landing S2. Do not implement S2
-# against the current type.
-Signal = Callable[[dict[str, ItemState], Context], set[str]]
+# This replaced an item-scoped `set[str]` contract in sprint 2. Widening it changed no
+# result: on the corpus at the time, all 7 multi-stage `(item, milestone)` pairs -- 18 of
+# 1,255 rows -- had identical per-stage qualification for both stage-scoped signals, so
+# the outputs were byte-identical before and after. The change was made to unblock
+# spec §7's S2 `gate_unassigned`, whose required-approval roles are granted per stage and
+# which could not be expressed against the old contract.
+
+Signal = Callable[[dict[str, ItemState], Context], set[tuple[str, str]]]
 
 
 def targets_at(state: ItemState, milestone_id: str) -> list[str]:
