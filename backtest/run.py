@@ -21,6 +21,8 @@ from signals.base import Context, Signal
 # either precedence. Do not "fix" it by editing this line; see LABELING.md.
 POSITIVE = {"slipped", "dropped", "exception_denied"}
 
+UNRESOLVED = "unresolved"   # neither positive nor negative; see adapters/k8s/LABELING.md
+
 
 @dataclass
 class Row:
