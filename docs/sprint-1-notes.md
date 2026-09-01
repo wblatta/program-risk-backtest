@@ -81,6 +81,21 @@ in the corpus resolves to a milestone the calendar knows about.
 
 ## Results
 
+> **Superseded — read `docs/sprint-2-notes.md` for current figures.**
+>
+> Every number in this section was produced under the item-scoped `Signal` contract
+> (`set[str]`). Sprint 2 widened that contract to `(item_id, stage)`, which removed a
+> backward credit the old broadcast was granting — a firing could be attributed to a row
+> at weeks *before* that row's target existed in the snapshot. 99 row-signal firings
+> changed. `hollow_owner`'s lift moved 1.310 → 1.357 and its median lead 9.3 → 8.6 weeks;
+> `prior_slip`'s CI lower bound moved 1.002 → 0.997 and **now includes 1.0 on the full
+> sample**, not only on the censoring cut.
+>
+> `out/k8s/*.csv` reflect the corrected contract, not the tables below. This section is
+> kept as the record of the sprint-1 run; the derived analyses further down (the 69-row
+> reclassification, the rename artifact) were computed against these figures and have not
+> been recomputed.
+
 1,255 rows, all labeled. Base rate (positive class = `slipped` ∪ `dropped` ∪
 `exception_denied`) = **0.302**.
 
@@ -492,7 +507,11 @@ In priority order, and the first two are the same problem:
    `exception_denied` too: either an exception decision outranks the retarget
    it caused, or the label goes and the reason is published. Leaving an
    unreachable label in the vocabulary is worse than either.
-2. **Widen the `Signal` type to `(item_id, stage)` — before landing S2.** A
+2. **Widen the `Signal` type to `(item_id, stage)` — before landing S2.** ✅ **Done — see
+   [`sprint-2-notes.md`](sprint-2-notes.md) §1.** It changed results, for a temporal reason
+   not anticipated below: the old broadcast credited firings to rows before their target
+   existed. The blast-radius estimate in this item was correct about the 7 multi-stage
+   pairs and wrong about the conclusion. A
    signal currently returns `set[str]` of *item ids* (`signals/base.py`), but a
    row is an `(item, stage, milestone)` triple, so `run_backtest` broadcasts one
    item-level firing across every stage that item targets at that milestone.
