@@ -5,3 +5,4 @@ __pycache__/
 *.egg-info/
 .remember/
 out/k8s/spike.json
+cache/k8s/github/

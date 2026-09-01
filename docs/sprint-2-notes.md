@@ -109,13 +109,25 @@ ids now matches nothing and fires on no row, deliberately, so the mistake fails 
 Two derived analyses in the sprint-1 notes were computed against the pre-widening
 figures and are **not** recomputed here:
 
-- The 69-row false-`shipped` reclassification sensitivity. Re-running the criterion as
-  the notes state it — HEAD `latest-milestone` earlier than the row's milestone, and
-  status not any spelling of `implemented` — yields **10 rows across 5 KEPs**, not 69
-  across 48. The set could not be regenerated, so its sensitivity table was left alone
-  rather than rewritten with numbers derived from a different population. The
-  discrepancy predates this change and is worth resolving before that bound is cited
-  again.
+- The 69-row false-`shipped` reclassification sensitivity. Its input set is unchanged —
+  the widening moved `first_fired` only, and the `shipped` population is still 811 — but
+  both endpoints of the sensitivity table moved with the corrected firings.
+
+  **A note on an error in an earlier draft of this file:** it reported that the criterion
+  could not be reproduced, yielding 10 rows across 5 KEPs rather than 69 across 48, and
+  flagged the published bound as unverifiable. That was wrong, and the fault was in the
+  reproduction. The check for "any spelling of `implemented`" was a substring test, and
+  `"implement" in "implementable"` is `True` — so 59 rows whose status is `implementable`
+  were silently excluded. `implementable` means *ready to be implemented*: the opposite of
+  shipped, and precisely the rows the bound exists to catch. Matching the status properly
+  gives **69 rows across 48 KEPs**, exactly as the sprint-1 notes state. The criterion as
+  written there is correct and reproducible.
+
+  The hazard is one this project already documented — `kep.yaml` statuses are dirty, and
+  the sprint-1 notes single out `2625-cpumanager-policies-thread-placement` as "the row
+  that would break any code switching on `status` literally". A substring test over that
+  vocabulary is the same mistake in a different costume.
+
 - The rename-artifact bound (`hollow_owner` 1.310 → 1.295). Its input set is unchanged,
   but both endpoints moved.
 
@@ -126,3 +138,94 @@ Neither affects the corrected table above, which is computed from the committed 
 1. Reverse the labeling precedence — **not started.** Now unblocked by GitHub auth, which
    makes the tracking-issue API data reachable.
 2. Widen `Signal` to `(item_id, stage)` — **done, this section.**
+
+---
+
+## 2. Tracking-issue data landed — and it does not say what sprint 1 assumed
+
+Sprint 1's plan for reversing the labeling precedence was: require positive evidence of
+delivery, drawn from "the tracking issue closed with `tracked/yes` at release, or
+code-merge evidence." The data is now in hand — 644 issues and their full label
+timelines, 7,322 label events — and that plan needs revising.
+
+### What was built
+
+`adapters/k8s/github.py` is a rate-limit-disciplined REST client; `adapters/k8s/tracking.py`
+parses issues and replays label history. Every KEP has a tracking issue whose **number is
+the KEP number**, carrying the release team's `tracked/*`, `stage/*`, `lead-opted-in` and
+`sig/*` labels.
+
+Current labels are the wrong shape for a backtest — they describe today, not what was
+knowable at a past date. The timeline endpoint gives `labeled`/`unlabeled` events with
+timestamps, so `labels_at()` replays them to any date using the same inclusive `as_of`
+convention as `core.replay.snapshot()`. The difference is real, not theoretical:
+`kep-3257` carries `stage/stable` today, but on 2022-09-09 it carried `stage/alpha` and
+`lead-opted-in`.
+
+Rate-limit discipline is three mechanisms, each with a test: a **reserve** that raises
+rather than spending the budget to zero; **ETag conditional requests**, which GitHub does
+not charge quota for, making re-runs nearly free; and **`Retry-After`** compliance on
+secondary limits. `fetch_tracking()` writes each issue as it arrives and stops cleanly at
+the first `RateLimitError`, so a partial run resumes rather than restarting. A full cold
+pass is ~1,300 requests against a 5,000/hour authenticated budget.
+
+### `tracked/yes` is not evidence of shipping
+
+Measured against the 1,255 backtest rows, at each row's milestone release date:
+
+| evidence at release | P(evidence \| shipped) | P(evidence \| slipped) | separation |
+|---|---|---|---|
+| `tracked/yes` | 51.8% | 40.0% | +11.8% |
+| `stage/<row stage>` | 41.4% | 34.1% | +7.4% |
+| `tracked/no` | 15.7% | 30.8% | −15.2% |
+| `lifecycle/stale\|rotten` ever | 45.7% | 48.9% | −3.2% |
+| **issue closed within +90d** | **21.6%** | **0.8%** | **+20.8%** |
+
+`tracked/yes` barely separates the classes. That label records that the release team was
+*tracking* the work for a release; it is not removed when the work fails, so it survives
+on 40% of the rows that slipped. Using it as the shipping gate would have admitted
+those — the same fallthrough failure the reversal exists to eliminate, wearing a label
+that looks like evidence.
+
+**Issue closure is the real signal.** Only 0.8% of slipped rows have it, so it is close to
+conclusive when present.
+
+### But closure only exists for one stage
+
+| shipped rows | closed within +90d |
+|---|---|
+| `stable` | 153 / 284 (53.9%) |
+| `beta` | 11 / 261 (4.2%) |
+| `alpha` | 9 / 257 (3.5%) |
+
+A tracking issue spans a KEP's entire lifecycle and closes when the KEP *finishes*, so
+closure is evidence about the final stage and almost nothing else. Roughly 78% of
+currently-`shipped` rows have no positive delivery evidence in this data at all.
+
+### What that means for reversing the precedence
+
+The reversal as specified is not achievable uniformly across stages with this source. The
+options are genuinely different studies, and the choice is not mine to make:
+
+1. **Reverse it anyway.** `shipped` requires closure evidence; everything else becomes
+   `unresolved` and leaves the metrics. That yields a high-confidence corpus of roughly
+   450 rows, heavily weighted toward `stable`, and discards about two-thirds of the
+   sample — including nearly all `alpha` and `beta` commitments, which are the majority
+   of the work.
+2. **Reverse it for `stable` only**, leaving `alpha`/`beta` on the v1 rule with the
+   caveat intact. Keeps the sample, but the labeling rule then differs by stage, which
+   has to be reported everywhere the numbers are.
+3. **Find a different evidence source for alpha/beta.** Code-merge evidence — the PRs
+   referenced from the KEP — is the obvious candidate and was always the other half of
+   sprint 1's sentence. It is a larger build: PR lookups per KEP, not one issue each.
+
+Option 3 is the one that actually answers the question, and options 1 and 2 are both
+retreats from it. Nothing has been implemented; the labeling rule is unchanged.
+
+### Status of sprint 1's P0 list
+
+1. Reverse the labeling precedence — **blocked on a design decision**, above. The evidence
+   source sprint 1 named does not support it.
+2. Widen `Signal` to `(item_id, stage)` — **done**, §1.
+3. Land the tracking-issue API data — **done**, this section. The data is fetched, parsed,
+   and characterised; what it cannot do is now measured rather than assumed.
