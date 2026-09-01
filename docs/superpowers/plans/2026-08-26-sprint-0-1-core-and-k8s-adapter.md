@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Python 3.12. Dependencies limited to `pyyaml`, `pandas`, `pytest`.
+- Python 3.12+. Dependencies limited to `pyyaml`, `pandas` (<3), `numpy`, `pytest`.
 - All timestamps are timezone-aware UTC `datetime`; all calendar dates are `date`.
 - Temporal rule: `Event.ts` is when the fact became true in the source system. Git: the committer time of the first-parent commit on the default branch. Never fetch time.
 - Every `Event` has a non-empty `source` ∈ {`git-history`, `calendar`, `exceptions`, `derived`}.
@@ -32,6 +32,30 @@ Real files were fetched from the K8s repos on 2026-08-26. Apply these to the spe
 3. The release schedule is a markdown table in `releases/release-1.N/README.md` with stable row names: `Start of Release Cycle`, `Begin [Enhancements Freeze]`, `Begin [Code Freeze]`, `v1.N.0 released`. Date cells contain `Weekday DDth Month YYYY`, sometimes inside a link with a UTC prefix.
 4. Tracking-issue labels confirmed: `tracked/yes`, `tracked/no`, `tracked/out-of-tree`, `stage/alpha|beta|stable`, `lead-opted-in`, `sig/*`. (Sprint 2.)
 5. Two freeze dates matter. `Milestone.freeze` = **code freeze** (delivery deadline; lead time is measured against it). `Milestone.dates["enhancements_freeze"]` = commitment point; backtest rows are the targets present in the snapshot at enhancements freeze.
+
+## Preflight and known traps
+
+Found by review before execution; the fixes are already folded into the task bodies below.
+Read this before starting Task 1.
+
+1. **Interpreter check first.** 3.12+ is required and the code uses `X | None` and builtin
+   generics everywhere. On a machine defaulting to 3.9/3.10 the failure surfaces late and
+   confusingly. Run the version assert in Task 1 Step 1 before creating the venv.
+2. **Create all five packages in Task 1.** `[tool.setuptools] packages` names `signals` and
+   `backtest`, which are otherwise not populated until Tasks 11–12 — `pip install -e '.[dev]'`
+   fails on the missing directories at the very first step.
+3. **`pandas` is pinned `>=2,<3`, and `numpy` is declared.** An unbounded `>=2` now resolves
+   to pandas 3.x, a breaking release. `backtest/metrics.py` (Task 12) does `import numpy as np`
+   directly, so numpy is a first-order dependency, not a transitive one. Widen the pandas pin
+   only after Task 12's metrics are validated against 3.x.
+4. **Nothing rescans the full event list inside a loop.** Two places were quadratic by
+   construction and both pass their unit tests regardless — the cost only appears on the real
+   corpus (~800 KEPs, tens of thousands of events) at Tasks 10 and 13:
+   - `outcome_events` (Task 9) buckets events by `item_id` once instead of filtering all events
+     per (milestone, item, stage).
+   - `snapshot()` (Task 4) takes `presorted=True`. `run_backtest` (Task 12) calls it 200+ times
+     — weekly across every milestone — so it sorts once up front, and slices a prebuilt outcome
+     list with `bisect` rather than refiltering all events each week.
 
 ## File structure
 
@@ -86,7 +110,7 @@ tests/
 ### Task 1: Scaffold + kep.yaml parser + ingestion spike (sprint 0)
 
 **Files:**
-- Create: `pyproject.toml`, `core/__init__.py`, `adapters/__init__.py`, `adapters/k8s/__init__.py`, `tests/__init__.py`, `tests/k8s/__init__.py`
+- Create: `pyproject.toml`, `core/__init__.py`, `adapters/__init__.py`, `adapters/k8s/__init__.py`, `signals/__init__.py`, `backtest/__init__.py`, `tests/__init__.py`, `tests/k8s/__init__.py`
 - Create: `adapters/k8s/config.py`, `adapters/k8s/fetch.py`, `adapters/k8s/kep_yaml.py`, `cli.py`
 - Test: `tests/k8s/test_kep_yaml.py`
 
@@ -102,7 +126,7 @@ tests/
 name = "program-risk-backtest"
 version = "0.0.1"
 requires-python = ">=3.12"
-dependencies = ["pyyaml>=6", "pandas>=2"]
+dependencies = ["pyyaml>=6", "pandas>=2,<3", "numpy>=1.26"]  # pandas 3.x is breaking; numpy is imported directly by backtest/metrics.py
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
@@ -115,7 +139,26 @@ markers = ["integration: needs a populated cache/ (deselect with -m 'not integra
 packages = ["core", "adapters", "adapters.k8s", "signals", "backtest"]
 ```
 
-Create empty `__init__.py` in `core/`, `adapters/`, `adapters/k8s/`, `tests/`, `tests/k8s/`. Then `python -m venv .venv && .venv/bin/pip install -e '.[dev]'`.
+**Preflight — check the interpreter before anything else.** The build requires 3.12+; a
+machine defaulting to 3.9/3.10 fails on `X | None` annotations and `dict[str, str]` generics
+throughout, and the failure surfaces as confusing import errors much later.
+
+```bash
+python3 -c 'import sys; assert sys.version_info >= (3,12), sys.version; print(sys.version)'
+```
+
+If that fails, find a newer interpreter (`ls /opt/homebrew/bin/python3.1*`) and use it
+explicitly for the venv below.
+
+**Create all five package directories now**, each with an empty `__init__.py`: `core/`,
+`adapters/`, `adapters/k8s/`, `signals/`, `backtest/`, plus `tests/` and `tests/k8s/`.
+`signals` and `backtest` are not populated until Tasks 11–12, but `[tool.setuptools]
+packages` names them, so `pip install -e` errors out on the missing directories if they
+are not created here.
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
+```
 
 - [ ] **Step 2: Write the failing parser tests**
 
@@ -725,7 +768,7 @@ git commit -m "feat(core): sqlite store with per-corpus replace"
 
 **Interfaces:**
 - Consumes: `Event`, `EventKind`.
-- Produces: `ItemState` dataclass with fields `item_id: str, created_at: datetime, targets: dict[str, str]` (stage → milestone_id; stageless uses key `""`), `target_set_at: dict[str, datetime]`, `target_history: dict[str, list[str]]`, `status: str | None`, `owners: dict[str, set[str]]` (role → subject ids), `deps: set[str]`, `last_activity: dict[str, datetime]` (actor → ts), `last_activity_any: datetime | None`. And `snapshot(events: Iterable[Event], as_of: datetime) -> dict[str, ItemState]`.
+- Produces: `ItemState` dataclass with fields `item_id: str, created_at: datetime, targets: dict[str, str]` (stage → milestone_id; stageless uses key `""`), `target_set_at: dict[str, datetime]`, `target_history: dict[str, list[str]]`, `status: str | None`, `owners: dict[str, set[str]]` (role → subject ids), `deps: set[str]`, `last_activity: dict[str, datetime]` (actor → ts), `last_activity_any: datetime | None`. And `snapshot(events: Iterable[Event], as_of: datetime, *, presorted: bool = False) -> dict[str, ItemState]`. `presorted=True` skips the internal sort — callers that sort once and then snapshot repeatedly (`outcome_events`, `run_backtest`) must use it.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -786,6 +829,12 @@ def test_deps_and_activity():
 def test_stageless_target_uses_empty_key():
     evs = [ev(T(1), K.TARGET_SET, {"milestone_id": "gitlab:17.3"}, item="gitlab:issue-1")]
     assert snapshot(evs, T(2))["gitlab:issue-1"].targets == {"": "gitlab:17.3"}
+
+def test_presorted_matches_unsorted_path():
+    evs = [ev(T(3), K.TARGET_SET, {"stage": "alpha", "milestone_id": "k8s:v1.31"}),
+           ev(T(1), K.TARGET_SET, {"stage": "alpha", "milestone_id": "k8s:v1.30"})]
+    ordered = sorted(evs, key=Event.sort_key)
+    assert snapshot(ordered, T(4), presorted=True) == snapshot(evs, T(4))
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -822,9 +871,11 @@ class ItemState:
         return max(self.last_activity.values()) if self.last_activity else None
 
 
-def snapshot(events: Iterable[Event], as_of: datetime) -> dict[str, ItemState]:
+def snapshot(events: Iterable[Event], as_of: datetime, *, presorted: bool = False) -> dict[str, ItemState]:
+    # Sorting is O(n log n) and the hot callers snapshot the same list hundreds of times.
+    # They sort once and pass presorted=True; ad-hoc callers get the safe default.
     states: dict[str, ItemState] = {}
-    for e in sorted(events, key=Event.sort_key):
+    for e in (events if presorted else sorted(events, key=Event.sort_key)):
         if e.kind == K.OUTCOME or e.ts > as_of:
             continue
         s = states.get(e.item_id)
@@ -855,7 +906,7 @@ def snapshot(events: Iterable[Event], as_of: datetime) -> dict[str, ItemState]:
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `.venv/bin/pytest tests/test_replay.py -v`
-Expected: 6 PASS
+Expected: 7 PASS
 
 - [ ] **Step 5: Commit**
 
@@ -1706,6 +1757,12 @@ def outcome_events(events: list[Event], milestones: list[Milestone], exceptions:
     by_id = {m.id: m for m in milestones}
     out: list[Event] = []
     events = sorted(events, key=Event.sort_key)
+    # Bucket by item once. Scanning all events per (milestone, item, stage) is quadratic:
+    # ~800 KEPs x ~40 milestones x tens of thousands of events stalls the Task 10 real build,
+    # while the unit tests below stay fast enough to hide it.
+    by_item: dict[str, list[Event]] = {}
+    for e in events:
+        by_item.setdefault(e.item_id, []).append(e)
     for m in sorted(milestones, key=lambda x: x.ordinal):
         ef = m.dates.get("enhancements_freeze")
         if not m.is_scheduled or ef is None or m.release > today:
@@ -1714,11 +1771,13 @@ def outcome_events(events: list[Event], milestones: list[Milestone], exceptions:
         nxt = next((x for x in milestones if x.ordinal > m.ordinal and x.dates.get("enhancements_freeze")), None)
         window_end = _dt(nxt.dates["enhancements_freeze"]) if nxt else _dt(today)
         exc_by_issue = {e.issue: e for e in exceptions.get(m.id, [])}
-        for item_id, state in snapshot(events, ef_dt).items():
+        for item_id, state in snapshot(events, ef_dt, presorted=True).items():
+            if m.id not in state.targets.values():
+                continue
+            later = [e for e in by_item.get(item_id, ()) if e.ts > ef_dt]
             for stage, target in state.targets.items():
                 if target != m.id:
                     continue
-                later = [e for e in events if e.item_id == item_id and e.ts > ef_dt]
                 retargeted = any(e.kind == K.TARGET_SET and (e.payload.get("stage") or "") == stage
                                  and by_id.get(e.payload["milestone_id"], m).ordinal > m.ordinal for e in later)
                 if retargeted:
@@ -2375,6 +2434,7 @@ def test_unscheduled_milestones_ignored():
 # backtest/run.py
 """Weekly snapshots per cycle → first-fired per signal → join to held-out outcomes."""
 from __future__ import annotations
+from bisect import bisect_right
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta, timezone
 from core.config import AdapterConfig
@@ -2401,9 +2461,13 @@ def _eod(d) -> datetime:
 
 def run_backtest(events: list[Event], milestones: list[Milestone], org_units: list[OrgUnit], config: AdapterConfig,
                  signals: dict[str, Signal], params: dict) -> list[Row]:
+    # Sort once. snapshot() below runs ~200+ times (weekly x every milestone); letting it
+    # re-sort the full event list on each call dominates the runtime.
     events = sorted(events, key=Event.sort_key)
     by_id = {m.id: m for m in milestones}
-    outcomes = {(e.item_id, e.payload.get("stage") or "", e.payload["milestone_id"]): e for e in events if e.kind == K.OUTCOME}
+    outcome_list = [e for e in events if e.kind == K.OUTCOME]   # already in ts order
+    outcome_ts = [e.ts for e in outcome_list]
+    outcomes = {(e.item_id, e.payload.get("stage") or "", e.payload["milestone_id"]): e for e in outcome_list}
     rows: list[Row] = []
     for m in sorted(milestones, key=lambda x: x.ordinal):
         ef = m.dates.get("enhancements_freeze")
@@ -2411,12 +2475,12 @@ def run_backtest(events: list[Event], milestones: list[Milestone], org_units: li
             continue
         start = m.dates.get("start") or (m.freeze - timedelta(weeks=15))
         commit_dt, freeze_dt = _eod(ef), _eod(m.freeze)
-        committed = {(iid, st) for iid, s in snapshot(events, commit_dt).items() for st, tgt in s.targets.items() if tgt == m.id}
+        committed = {(iid, st) for iid, s in snapshot(events, commit_dt, presorted=True).items() for st, tgt in s.targets.items() if tgt == m.id}
         first: dict[tuple[str, str], dict[str, datetime | None]] = {key: {n: None for n in signals} for key in committed}
         as_of = _eod(start)
         while as_of <= freeze_dt:
-            states = snapshot(events, as_of)
-            prior = [e for e in events if e.kind == K.OUTCOME and e.ts <= as_of]
+            states = snapshot(events, as_of, presorted=True)
+            prior = outcome_list[:bisect_right(outcome_ts, as_of)]   # same reason: no full rescan per week
             ctx = Context(as_of, m, by_id, org_units, config, dict(params), prior)
             for name, fn in signals.items():
                 fired = fn(states, ctx)
@@ -2424,7 +2488,7 @@ def run_backtest(events: list[Event], milestones: list[Milestone], org_units: li
                     if iid in fired and first[(iid, st)][name] is None:
                         first[(iid, st)][name] = as_of
             as_of += timedelta(weeks=1)
-        final = snapshot(events, commit_dt)
+        final = snapshot(events, commit_dt, presorted=True)
         for (iid, st) in sorted(committed):
             owning = sorted(final[iid].owners.get("owning", ()))
             oc = outcomes.get((iid, st, m.id))

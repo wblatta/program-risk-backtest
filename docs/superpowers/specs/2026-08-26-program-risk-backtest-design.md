@@ -252,8 +252,10 @@ across PRR and tracking-format changes]`.
 3. Join rows to outcomes with `ts > freeze`.
 
 **Metrics per signal**: fired, precision, recall, lift (precision ÷ base
-rate), median lead in weeks with IQR, class (`risk` if median lead ≥ L else
-`status`). Bootstrap 95% CIs on precision and lift by resampling rows.
+rate), median lead in weeks with IQR, `lead_class` (`risk` if median lead ≥ L
+else `status`). Bootstrap 95% CIs on precision and lift by resampling rows.
+`lead_class` describes **lead time only** and carries no claim about predictive
+value — a signal with sub-1.0 lift can be `risk`. See sprint-1 amendment 11.
 
 **Cuts**: by org unit, by stage, S0 vs each signal.
 
@@ -269,7 +271,8 @@ rate), median lead in weeks with IQR, class (`risk` if median lead ≥ L else
 
 `register --milestone <id>` runs every signal on `snapshot(now)` and prints
 one line per item with the signals firing, each annotated with its backtest
-precision and class. Split into two sections by class: risk and status.
+precision and `lead_class`. Split into two sections by `lead_class`: risk and
+status.
 Requires a completed backtest for the same corpus.
 
 ## 10. The finding
@@ -381,3 +384,179 @@ plan. These override the corresponding lines in §3–§5 above.
    replaces this with tracking-issue commenters and PR authors from the API.
 8. Tracking-issue labels confirmed for sprint 2: `tracked/yes|no|out-of-tree`,
    `stage/alpha|beta|stable`, `lead-opted-in`, `sig/*`.
+
+## Amendments (sprint 1, 2026-08-26)
+
+Found by building the corpus and running the first backtest. These override
+the corresponding lines in §3–§5 and §8 above; the planning amendments stand
+unless contradicted here. Every number below is measured on the clone of
+`kubernetes/enhancements` used for the run, not estimated.
+
+1. **`kep.yaml` history begins 2020-03-17.** The first `kep.yaml` added on
+   first-parent `main` is dated 2020-03-17; 104 were added during 2020 and
+   none earlier (the KEP process before that lived in freeform markdown).
+   This, not calendar parsing, is why milestones before v1.19 can never
+   produce backtest rows: their enhancements freezes predate the data
+   entirely. It also bounds the earliest usable cycle — v1.19's enhancements
+   freeze is 2020-05-19, roughly two months after the corpus starts, so its
+   snapshots see a partially-populated repository (15 rows, versus 60–90 for
+   a mature cycle). §8's "most recent ~8 releases" is superseded: all 19
+   scheduled milestones (v1.19–v1.37) are backtested, and comparability is
+   reported as a cut rather than imposed as a filter.
+
+2. **Item ids must derive from `kep-number`, not the directory prefix, and
+   the mapping is not injective.** §5's `work_item` row ("one per `kep.yaml`;
+   id `k8s:kep-NNNN`") is right about the id and wrong to assume it falls out
+   of the path. Three distinct failure modes on the real corpus:
+   - Four directories declare `kep-number: 0` — `sig-architecture/0000-kep-process`,
+     `sig-contributor-experience/0000-community-forum`,
+     `sig-release/0000-anago-to-krel-migration`,
+     `sig-cloud-provider/providers/0000-cloud-provider-template`. These are
+     process documents, not enhancements; they are excluded, counted, and
+     printed by `cli.py build`.
+   - `sig-cloud-provider/2133-out-of-tree-credential-provider` (status
+     `replaced`) and `sig-node/2133-kubelet-credential-providers` (status
+     `implemented`) are the *same* KEP either side of a SIG move. Merging the
+     two directories' histories into one stream produced a status transition
+     into `replaced` and hence a fabricated `dropped` label on a KEP that is
+     alive and implemented. The adapter keeps one directory per number and
+     prints which one it dropped.
+   - `sig-node/2043-pod-resource-concrete-assigments` declares
+     `kep-number: 1884` and no `1884-*` directory exists anywhere in the repo,
+     so the directory prefix and the declared number disagree with no third
+     source to arbitrate. The declared number wins.
+
+   Net: 649 directories → 644 work items.
+
+3. **KEP directories nest deeper than two levels.** `keps/sig-*/NNNN-*/kep.yaml`
+   matches 612 files; 37 more live one level deeper under a provider or group
+   directory (e.g. `keps/sig-cloud-provider/azure/2328-ccm-instance-metadata/kep.yaml`),
+   four of which carry milestone blocks and therefore produce real rows.
+   Directory discovery is "contains a `kep.yaml` under `keps/sig-*`", not a
+   fixed depth.
+
+4. **Renames are real and must be followed; copies must not be.** 29 of the
+   649 directories' `kep.yaml` files cross at least one rename in first-parent
+   history — renumberings (`2144-clientgo-apply` → `2155-clientgo-apply`,
+   `20200309-consistent-resource-versions-semantics` →
+   `2523-…`), retitles (`3716-webhook-predicates` →
+   `3716-admission-webhook-match-conditions`), and typo fixes
+   (`2307-job-tracking-wihout-lingering-pods` → `…-without-…`). Dropping them
+   truncates the item's history at the rename and dates its "creation" wrongly.
+   But plain `git log --follow` also walks git's *copy* detections, and KEP
+   authors routinely seed a new KEP from a sibling's file — on this corpus an
+   unbounded follow walked `3257-cluster-trust-bundles` out into unrelated
+   KEPs and terminated at `keps/NNNN-kep-template/kep.yaml`, inflating 7 real
+   versions to 22 and dating the KEP to the template's birthday. The rule is:
+   follow `R` status, stop at `C`.
+
+5. **`status` is dirty and must be normalized, never switched on.** §3's
+   "Adapter-normalized" note is load-bearing, not decorative. Across the whole
+   history the `status_changed` stream carries, besides the documented
+   vocabulary: `imlpemented`, `implementeable` (×3), `implemented (alpha)`
+   (×2), `implemented (beta)` (×2), `alpha`, `removed`, `superseded`, and one
+   KEP whose status is the template's pasted pipe-separated enum list
+   (`provisional|implementable|implemented|deferred|rejected|withdrawn|replaced`).
+   `superseded` is a genuine drop and is in the drop-status set.
+   **`removed` is not.** `sig-node/281-dynamic-kubelet-configuration` shipped
+   alpha in v1.8 and beta in v1.11; its status records the *feature's* later
+   removal from Kubernetes, years after the deliverables it is being scored on
+   landed. Treating it as a drop would relabel a historical success as a
+   failure. See `adapters/k8s/LABELING.md`, which is normative on this.
+
+6. **A retracted milestone stage is observable and must emit an event.**
+   §3's `target_set` row assumed targets only move forward. They also
+   disappear: a KEP deletes `stable: v1.31` from its `milestone` block while
+   keeping `alpha: v1.27`, recording that the future commitment was withdrawn
+   (real example: `sig-storage/3476-volume-group-snapshot`). 71 such
+   retractions occur across 50 items. Without an explicit event the stale
+   target simply persists in every later snapshot and the row is labeled
+   `shipped`. The adapter emits a `target_set` with `payload.op == "clear"`;
+   `LABELING.md` rule 2 consumes it as evidence of a drop, and rule 1
+   explicitly excludes it from the slip check so that a clear-then-retarget
+   is scored as a slip rather than a drop.
+
+7. **`exceptions.yaml` has two schemas plus one unrecoverable file.** Planning
+   amendment 2 described only the modern schema. Files before v1.24 are a
+   single flat top-level list with the freeze phase recorded only in a
+   free-text header comment — never as structured data — so requests recovered
+   from them carry `phase = "unspecified"` rather than a phase guessed from
+   prose. release-1.23 additionally fails to parse solely because U+200B
+   zero-width spaces contaminate its header comments; stripping them is data
+   cleaning, not a heuristic. Recovering v1.21, v1.22 and v1.23 added 40
+   requests — over the scheduled range v1.19–v1.37, 121 → 161. release-1.20's
+   file is genuinely malformed (a block-mapping error surviving ZWSP
+   stripping) and contributes zero; v1.20 is therefore the one milestone in
+   range whose exception data is *known-missing* rather than known-absent, and
+   `load_exceptions` surfaces it as a `SkippedExceptionsFile` so it is never
+   silently invisible.
+
+8. **Release README timelines vary by era; three files have no year at all.**
+   Planning amendment 3 said the calendar is "a markdown table with free-text
+   dates". Only v1.24 and later use the modern format. v1.19–v1.23 use
+   month-first dates with abbreviated weekdays, including the non-standard
+   `Thur`, and the READMEs for v1.19, v1.21 and v1.22 contain **no year
+   anywhere in the file**. The year for those three cycles is a hand-verified
+   constant in `adapters/k8s/calendar.yaml`, not a value inferred from the
+   document. `calendar.yaml` is committed and is the source of truth; the
+   parser exists to regenerate a candidate for a human to check, not to be
+   trusted at runtime.
+
+9. **Org attribution is point-in-time and inherits the source's typos.** A
+   row's `org_id` is the owning SIG in the snapshot at enhancements freeze,
+   taken verbatim from `kep.yaml`, and is not validated against `sigs.yaml`.
+   `sig-api-machinery/4346-informer-metrics` declared `owning-sig:
+   api-machinery` (no `sig-` prefix) from 2024-02-08 and fixed it on
+   2024-02-12 — three days *after* v1.30's enhancements freeze. Its row is
+   therefore attributed to `k8s:api-machinery`, an org unit that does not
+   exist in `sigs.yaml`, and `out/k8s/by_org.csv` has a one-row group for it.
+   This is the correct point-in-time answer and the wrong org; a
+   `by_org` consumer must treat unmatched org ids as a data-quality signal
+   rather than a SIG.
+
+10. **`exception_denied` is unreachable under §5's precedence order.** Over
+    v1.19–v1.37 the recovered `exceptions.yaml` files hold 161 requests: 128
+    approved, 33 not approved. Fifteen of the 33 correspond to an actual
+    backtest row, and every one of those fifteen is labeled `slipped`, because
+    the labeling rule evaluates slip (rule 1) before denied-exception (rule 3).
+    That ordering is not accidental — a SIG refused an exception has to
+    retarget, which *is* a slip — but it means `exception_denied` can never
+    fire for the population it was written to describe, and the first backtest
+    reports 0 of them. §5's precedence must either be reordered in labeling v2
+    so an exception decision outranks the retarget it caused, or the label must
+    be removed and the reason stated. It is not a data gap.
+
+11. **`signals.csv`'s `class` column is renamed `lead_class`.** §8 defines it on
+    median lead alone (`risk` if median lead ≥ L else `status`) and the
+    implementation is faithful to that, but the name invites reading it as a
+    verdict on whether the signal predicts anything. It does not: on the first
+    backtest `late_target` has lift 0.822 — its whole CI below 1.0, i.e.
+    negatively predictive — and still classes as `risk`, because it fires a
+    median 5.3 weeks out. Naming the column `lead_class` keeps the definition
+    §8 chose and removes the conflation; predictive value is the `lift` column
+    and its CI, and the two must be read together. `register` (§9) splits on
+    `lead_class` for the same reason. Renamed rather than gated on `lift > 1`,
+    because the column genuinely describes lead time and a lead-time fact about
+    a non-predictive signal is still a fact worth reporting.
+
+12. **`by_stage.csv` is specified in §8's committed outputs but is not produced
+    in sprint 1.** `signals.csv`, `rows.csv` and `by_org.csv` are written;
+    `by_stage.csv` is not. The by-stage cut itself was computed and is reported
+    in `docs/sprint-1-notes.md` (alpha 0.299 / beta 0.324 / stable 0.290, flat),
+    so the analysis is not missing — only the committed artifact is. It is a
+    one-line `groupby` on `rows.csv` and is queued for sprint 2 alongside S2,
+    S3 and S6. Recorded here because every other deviation from the spec is
+    recorded here, and an output listed as committed that no command produces
+    should not be discoverable only by running `ls`.
+
+13. **`out/k8s/spike.json` is deleted and is no longer committed.** It was the
+    sprint-0 spike's raw dump of every parsed `kep.yaml` (320KB). It is not in
+    §8's committed-artifacts list, it is fully regenerable with `cli.py spike`,
+    and it had gone stale: it keys rows by *directory name*, which amendment 2
+    superseded when item ids moved to `kep-number`, so it disagrees with
+    `rows.csv` about the identity of the corpus. A stale, uncited, regenerable
+    artifact that contradicts a current one is a liability rather than a
+    record. Deleted, and added to `.gitignore` so a later `cli.py spike` run
+    does not silently re-commit it. Nothing reads it: the spike's *findings*
+    live in the planning amendments and in `calendar.yaml`, both of which are
+    committed and current.

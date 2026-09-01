@@ -4,3 +4,4 @@ __pycache__/
 .venv/
 *.egg-info/
 .remember/
+out/k8s/spike.json
