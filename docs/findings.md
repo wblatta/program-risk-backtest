@@ -151,6 +151,48 @@ that was going to fail had already failed by then.
 
 ---
 
+
+## Signals in combination
+
+The per-signal table answers "does this predict". The operational question is different:
+*if I act only when two independent checks agree, how often am I right, and how much do I
+stop seeing?* Evidenced, uncensored, first-fired, n=855, base 0.434:
+
+| combination | fires | precision | recall | lift | 95% CI |
+|---|---|---|---|---|---|
+| **`gate_unassigned` AND `item_silent`** | 100 (11.7%) | **0.940** | 0.253 | **2.166** | [1.998, 2.367] |
+| `gate_unassigned` AND `hollow_owner` | 146 (17.1%) | 0.877 | 0.345 | 2.020 | [1.861, 2.210] |
+| `item_silent` AND `process_tracked` | 116 (13.6%) | 0.871 | 0.272 | 2.007 | [1.836, 2.194] |
+| `gate_unassigned` AND `process_tracked` | 163 (19.1%) | 0.865 | 0.380 | 1.994 | [1.831, 2.171] |
+| `item_silent` alone, for reference | 121 (14.2%) | 0.868 | 0.283 | 2.000 | [1.828, 2.185] |
+
+**The best pair is significantly better than either parent**, tested by paired bootstrap on
+the difference rather than by eyeballing overlapping intervals:
+
+| | difference in lift | 95% CI |
+|---|---|---|
+| pair vs `item_silent` alone | +0.167 | [+0.064, +0.290] |
+| pair vs `gate_unassigned` alone | +0.449 | [+0.304, +0.610] |
+| pair vs the human control | +1.030 | [+0.858, +1.215] |
+
+The two overlap on only 43% of their combined firings, which is why the conjunction has
+anything to add: `item_silent` is mostly filtering `gate_unassigned`'s false positives with
+an independent check. **94% precision on 12% of committed work, at the freeze.**
+
+**And it misses 277 of 371 slips.** That is the trade, stated plainly: this is a triage
+tool, not a safety net. If you can only look at a dozen items, these are the dozen. If you
+need to catch most failures, nothing in this project does that.
+
+**One row in the table is not a finding.** `item_silent AND hollow_owner` reports numbers
+identical to `item_silent` alone, because silence-from-everyone is *necessarily* a subset
+of no-listed-owner-activity. The analysis flags it as `item_silent ⊆ hollow_owner` rather
+than publishing a duplicate as a result. It is a correctness check on both
+implementations, and it passes.
+
+**The human label adds nothing to the best pair.** Adding `process_tracked` moves 0.940 to
+0.938 and loses three rows. It is not independent of the other two in the way they are
+independent of each other.
+
 ## Three signals now beat the organisation's own judgment
 
 `process_tracked` is the control — the release team's own `tracked/*` scope label, read at
@@ -209,8 +251,7 @@ v1.32.
 - **H2 is untested, not refuted.** 21 and 62 firings decide nothing.
 - **One corpus, one organisation.** Kubernetes has unusually strong process hygiene and
   machine-readable artifacts, which makes it the best case for this method rather than a
-  typical one. The second corpus is [blocked on credentials](adapters/gitlab.md), not on
-  design.
+  typical one.
 - **`org_overcommitted` fires on 73% of rows.** Even where its interval clears 1.0 it is
   too indiscriminate to act on, and it is reported as null for that reason as much as for
   its interval.
@@ -275,13 +316,14 @@ another. Nothing internal caught them: every internal check compares the corpus 
 
 ## If someone continues this
 
-- **A second corpus.** The single highest-value next step, and the one thing that separates
-  "this works" from "this works on Kubernetes." Blocked on a GitLab API token, not on
-  design — see [`docs/adapters/gitlab.md`](adapters/gitlab.md).
+- **A second corpus, on GitHub.** The one thing that separates "this works" from "this
+  works on Kubernetes." It needs no new credentials: GitHub's timeline API carries
+  `milestoned` / `demilestoned` events with timestamps, which is exactly the point-in-time
+  target history this design requires, and the rate-limited client already exists.
 - **Run `gate_unassigned` at M=6.** The grid says it is both actionable and predictive
   there. This is the one finding here that is directly operational.
 - **Chase recall, not precision.** Precision is adequate. Coverage is the weakness, in the
   signals and in the dependency graph alike.
-- **Give the dependency graph a real source.** H2 deserves a corpus that records
-  dependencies — GitLab's issue-links API types them, which is exactly what KEP prose
-  does not.
+- **Give the dependency graph a real source.** H2 needs a corpus that records typed
+  dependency edges. Neither KEP prose nor GitHub cross-references carry a relation type,
+  so on this platform H2 stays open — and a second GitHub corpus will not close it.

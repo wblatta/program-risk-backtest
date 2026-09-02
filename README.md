@@ -6,7 +6,7 @@ This project answers that question with a measurement instead of an opinion. It 
 
 The answer, on 1,255 committed deliverables across six years:
 
-**An enhancement nobody has touched in eight weeks slips 2.1x more often than the base rate — and three signals now beat the release team's own scope label at the moment the commitment locks.** The best of them flags 17% of committed work at 91% precision. A second, checking whether the required approval gate has anyone attached to it, reaches 41% recall at 76% precision.
+**Two independent checks — nobody has touched the work in eight weeks, and the required approval gate has no holder — agree on 12% of committed deliverables and are right about 94% of them.** That is eight weeks before the deadline, and it significantly beats either check alone and the release team's own scope label. The trade is recall: it misses three quarters of all slips. This is a triage tool, not a safety net.
 
 Then the release team's tracking label went unapplied for four consecutive cycles. The signals that read what people *did* got stronger through that period. The one that read what people *recorded* got weaker.
 
@@ -115,6 +115,23 @@ The ordering is identical across both cuts, both evaluation points and both cens
 
 **Half the signals did not work, reported because a study that only surfaces its successes is not a study.** `prior_slip`, `cross_org` and `org_overcommitted` are indistinguishable from noise. Both dependency signals are null on too few firings to decide anything. And `late_target` is *negatively* predictive with its whole interval below 1.0 at every parameter value tested — work committed close to the freeze slipped **less**, most plausibly because a team committing late commits with better information.
 
+## Signals in combination
+
+The table above asks "does this predict". The question a release lead actually has is different: *if I act only when two independent checks agree, how often am I right?*
+
+| combination | fires | precision | recall | **lift** | 95% CI |
+|---|---|---|---|---|---|
+| **`gate_unassigned` AND `item_silent`** | 100 (11.7%) | **0.940** | 0.253 | **2.166** | 2.00 – 2.37 |
+| `gate_unassigned` AND `hollow_owner` | 146 (17.1%) | 0.877 | 0.345 | 2.020 | 1.86 – 2.21 |
+| `gate_unassigned` AND `process_tracked` | 163 (19.1%) | 0.865 | 0.380 | 1.994 | 1.83 – 2.17 |
+| `item_silent` alone, for reference | 121 (14.2%) | 0.868 | 0.283 | 2.000 | 1.83 – 2.19 |
+
+The best pair is **significantly** better than either parent — +0.167 [+0.064, +0.290] over `item_silent`, +0.449 [+0.304, +0.610] over `gate_unassigned` — tested by paired bootstrap on the difference rather than by eyeballing overlapping intervals. They overlap on only 43% of their combined firings, which is why the pair adds anything: silence is filtering the gate check's false positives with an independent signal.
+
+**And it misses 277 of 371 slips.** Stated plainly because a 94% precision figure invites the wrong reading. If you can look at a dozen items, these are the dozen; if you need to catch most failures, nothing here does that.
+
+One row is deliberately not a finding: `item_silent AND hollow_owner` reproduces `item_silent` exactly, because silence-from-everyone is *necessarily* a subset of no-listed-owner-activity. The analysis flags the containment instead of publishing a duplicate. It is a correctness check on both implementations, and it passes.
+
 ## Who slips, and where
 
 Two cuts the signal table cannot show, both evidenced, base rate 0.393.
@@ -150,6 +167,8 @@ This is the one cut with a straightforward operational reading: whatever `sig-sc
 ## What the program should change
 
 Four recommendations, each tied to a row above rather than to a prior.
+
+**0. Act on the pair, not on any single signal.** `gate_unassigned` and `item_silent` together are right about 94% of what they flag, significantly better than either alone, and they flag a short enough list to actually review. Neither signal alone justifies an intervention at that confidence.
 
 **1. Run the approval-gate check six weeks before the freeze, not four.** `gate_unassigned` is the best operational instrument in the set — 40% recall at 74% precision — but at the a priori `M = 4` its median lead is 3.3 weeks, which classifies it as *status*: it tells you about a problem you can no longer fix. The [sensitivity grid](out/k8s/sensitivity.csv) shows that at `M = 6` it reclassifies to *risk* and still scores lift **1.694 [1.567, 1.837]**. This is a one-parameter change that converts the most useful signal from a report into a warning.
 
@@ -288,6 +307,6 @@ Sprints 0–3 complete, and the right-censoring decision sprint 2 left open is n
 
 All ten signals in spec §7 are built, all six of spec §14's open questions are answered in the spec beside the questions, and all six conformance checks pass on 296 tests.
 
-**Sprint 4 — the GitLab adapter — is blocked on a credential, not on design.** GitLab requires authentication for `resource_milestone_events` on every public project, and that endpoint is the timestamped history this project's entire leakage boundary depends on. Without it every `target_set` would carry a fabricated timestamp and the pipeline would emit numbers that are wrong in a way no internal check could catch. [`docs/adapters/gitlab.md`](docs/adapters/gitlab.md) records the full mapping, the measured endpoint statuses, and what unblocks it: a token with `read_api` scope.
+**A second corpus is the remaining work, and it should be another GitHub project.** GitHub's timeline API carries `milestoned` / `demilestoned` events with timestamps — exactly the point-in-time target history this design requires — so the existing rate-limited client covers it and no new credentials are needed. [`docs/adapters/gitlab.md`](docs/adapters/gitlab.md) records why GitLab was evaluated and set aside: its milestone-history endpoint requires authentication on every public project, and a second corpus is a proxy for "some other organisation" either way.
 
-A second corpus remains the highest-value next step — and the one that could settle H2, since GitLab's issue-links API types dependencies explicitly, which is exactly what KEP prose does not.
+H2 stays open regardless. Neither KEP prose nor GitHub cross-references carry a typed dependency relation, so no GitHub corpus can close it.
