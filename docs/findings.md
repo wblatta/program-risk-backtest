@@ -222,10 +222,10 @@ have read 2.398 and 2.247 for the first two signals — the censoring inflates p
 era this section is about, which is why it is excluded here rather than only mentioned.
 
 Every activity- and process-derived signal got *stronger*. The label-derived control got
-weaker. The reason is visible in the raw firing counts: in v1.28 through v1.31 the release
-team's `tracked/yes` label was applied to **no row at all** — `process_tracked` fires on
-61/61, 65/65, 74/74 and 57/58 rows in those four cycles — before partially returning from
-v1.32.
+weaker. The reason is visible in the raw firing counts: in v1.28, v1.29 and v1.30 the
+release team's `tracked/yes` label was applied to **no row at all** — `process_tracked`
+fires on 61/61, 65/65 and 74/74 rows — and to a single row of 58 in v1.31, before
+partially returning from v1.32.
 
 > Broken process hygiene is not only a risk signal in itself. It destroys the signals that
 > depend on hygiene — exactly when you most need something that does not.
@@ -256,6 +256,67 @@ v1.32.
   too indiscriminate to act on, and it is reported as null for that reason as much as for
   its interval.
 
+
+## What would have made this measurable
+
+The recommendations above are about shipping. This section is about **being observable at
+all**, and it is the part most transferable to another organisation — because almost every
+limit this project hit was an artifact failure rather than an analysis failure.
+
+Kubernetes is already near the top of the distribution. Of 41 surveyed projects, 8 record
+no retargeting at all, so the question cannot even be asked of them. Everything below is a
+gap in a corpus that is *unusually* good.
+
+**1. Link the implementation back to the commitment.** 290 rows (23%) are `unresolved` —
+outcome unknown to the instrument — and 105 of them carry a `kep.yaml` self-report claiming
+delivery at exactly that milestone. The work shipped; the paper trail did not connect. A
+convention that every implementation PR references its tracking issue would have moved most
+of those 290 rows into the evidenced cut, taking coverage from 77% to somewhere near 90%.
+This is the single highest-value change on the list, and it costs one line in a PR template.
+
+**2. Type the dependency edges.** Only 18% of enhancement READMEs reference another KEP at
+all, and none of those references carries a relation type — "depends on" and "is related to"
+are indistinguishable in prose. **H2 has no verdict because of this**, on 15 and 56 firings.
+A `depends-on:` list in `kep.yaml`, next to the milestones already there, is a schema
+addition of a few lines and would make a whole hypothesis testable.
+
+**3. Record delivery explicitly, rather than inferring it from silence.** The original
+labeling rule made `shipped` the fallthrough case — "not observed to slip" — with a provable
+8.5% error floor that ran one direction and *understated the signal that worked*. Sprint 2
+replaced it with positive evidence, which is why the evidenced cut exists at all. A single
+per-stage "did this ship in this release" field, written at release time, would remove the
+largest single source of label error and the need for the two-cut apparatus.
+
+**4. Do not let the scope label lapse.** In v1.28, v1.29 and v1.30 the release team applied
+`tracked/yes` to no row at all. The organisation lost its own scope signal for three
+consecutive cycles, and on this evidence did not notice. This is the one recommendation that
+is both a measurement fix and a delivery fix: the label is the cheapest predictor available,
+and it is free because someone is already making the decision it records.
+
+**5. Make actor identity resolvable across systems.** Git author emails do not map to GitHub
+handles, so for two sprints `hollow_owner` could only ask "has anyone touched this" rather
+than the question H1 actually poses. The tracking-issue timelines rescued it — 47,573 events
+from 2,147 named logins — but only because the discussion happened to live somewhere with
+resolvable identity. A commit-to-account mapping would make the richer signal available from
+git alone.
+
+**6. Keep the roadmap machine-readable, in version control, with history.** This one
+Kubernetes gets right, and it is why any of this was possible: `kep.yaml` in git means the
+roadmap can be replayed to any past date. Without it there is no `snapshot(as_of)`, no
+leakage boundary, and no backtest. Most projects surveyed cannot do this.
+
+### The honest caveat
+
+Every item above would have made the *measurement* better. **Only #4 has evidence of
+improving delivery**, and even that is a signal about slippage, not a demonstrated cause of
+it. Nothing in this project is an intervention study — a signal that predicts a slip is not
+proof that acting on it prevents one, and spec §13 ruled that out of scope precisely because
+it is confounded even inside a single organisation.
+
+The claim here is narrower and defensible: **an organisation that adopts these six
+conventions can find out whether its delivery risk is predictable.** One that does not,
+cannot — and 8 of the 41 projects surveyed are in the second category without, as far as
+anyone can tell, knowing it.
 
 ## Why there is no second corpus
 

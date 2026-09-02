@@ -109,7 +109,7 @@ The ordering is identical across both cuts, both evaluation points and both cens
 
 **`gate_unassigned` is the one you would actually deploy.** `item_silent` is more precise but flags a sixth of the work; the gate check reaches 41% recall at 76% precision, and the [sensitivity grid](out/k8s/sensitivity.csv) shows that running it six weeks out instead of four keeps it predictive (lift 1.694) while making it early enough to act on.
 
-**And then the label was abandoned.** In v1.28 through v1.31 the release team applied `tracked/yes` to no row at all, before partially resuming. Comparing v1.19–27 against v1.28–35, every activity-derived signal got *stronger* — `item_silent` from lift 1.860 to 2.161, `gate_unassigned` from 1.547 to 1.962 — while the label-derived control declined from 1.239 to 1.073.
+**And then the label was abandoned.** In v1.28, v1.29 and v1.30 the release team applied `tracked/yes` to **no row at all** (61/61, 65/65, 74/74 rows unlabelled), and to one row in 58 in v1.31, before partially resuming. Comparing v1.19–27 against v1.28–35, every activity-derived signal got *stronger* — `item_silent` from lift 1.860 to 2.161, `gate_unassigned` from 1.547 to 1.962 — while the label-derived control declined from 1.239 to 1.073.
 
 > Broken process hygiene is not only a risk signal in itself. It destroys the signals that depend on hygiene — exactly when you most need something that does not.
 
@@ -179,6 +179,25 @@ Four recommendations, each tied to a row above rather than to a prior.
 **4. Stop treating late commitment as a risk.** `late_target` is significantly **negative** at every parameter value tested — work committed close to the freeze slipped *less*. If a process penalises or flags late additions on risk grounds, this corpus says that intuition is backwards, most plausibly because a team committing late commits with better information.
 
 **One thing this cannot tell you.** None of the above is an intervention study. Every number here is observational, and a signal that predicts a slip is not evidence that acting on it prevents one — that requires an experiment, and is confounded even inside a single organisation. Spec §13 ruled it out of scope for exactly this reason.
+
+## What would have made this measurable
+
+The recommendations above are about shipping. This is about **being observable at all** — and it is the part that transfers to another organisation, because almost every limit this project hit was an artifact failure rather than an analysis failure.
+
+Kubernetes is already near the top of the distribution: of 41 surveyed projects, 8 record no retargeting at all, so the question cannot be asked of them. Everything here is a gap in a corpus that is *unusually* good.
+
+| | change | what it would have fixed |
+|---|---|---|
+| **1** | Every implementation PR references its tracking issue | 290 rows (23%) are `unresolved`, and **105 of them self-report delivery** — the work shipped, the trail didn't connect. Coverage would go from 77% to near 90%. One line in a PR template. |
+| **2** | A `depends-on:` field in the proposal metadata | Only 18% of READMEs reference a sibling and none carries a relation type. **H2 has no verdict because of this.** A few lines of schema would make a whole hypothesis testable. |
+| **3** | Record delivery explicitly per stage, at release time | `shipped` was originally a fallthrough — "not observed to slip" — with a provable **8.5% error floor** that understated the signal that worked. Would remove the largest source of label error. |
+| **4** | Don't let the scope label lapse | v1.28–v1.30: `tracked/yes` applied to **no row at all**. The organisation lost its own scope signal for three cycles and did not notice. |
+| **5** | Resolvable actor identity across git and the issue tracker | Git emails don't map to GitHub handles, so for two sprints the signal could not ask H1's actual question. |
+| **6** | Machine-readable roadmap, in version control, with history | **Kubernetes gets this right**, and it is why any of this was possible: `kep.yaml` in git is what makes `snapshot(as_of)` — and therefore the whole backtest — exist. Most projects surveyed cannot do this. |
+
+**The honest caveat.** Every item would have made the *measurement* better. Only #4 has evidence of improving *delivery*, and even that is a signal about slippage rather than a demonstrated cause of it. Nothing here is an intervention study.
+
+The defensible claim is narrower: **an organisation that adopts these conventions can find out whether its delivery risk is predictable. One that does not, cannot** — and 8 of the 41 projects surveyed are in the second category without, as far as anyone can tell, knowing it.
 
 ## What these numbers cannot support
 
