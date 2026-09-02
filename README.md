@@ -113,6 +113,52 @@ The ordering is identical across both cuts and both evaluation points.
 
 **Half the signals did not work, reported because a study that only surfaces its successes is not a study.** `prior_slip`, `cross_org` and `org_overcommitted` are indistinguishable from noise. Both dependency signals are null on too few firings to decide anything. And `late_target` is *negatively* predictive with its whole interval below 1.0 at every parameter value tested — work committed close to the freeze slipped **less**, most plausibly because a team committing late commits with better information.
 
+## Who slips, and where
+
+Two cuts the signal table cannot show, both evidenced, base rate 0.393.
+
+**By SIG** (owning org, ≥25 rows):
+
+| SIG | rows | slip rate |
+|---|---|---|
+| `sig-storage` | 117 | **0.487** |
+| `sig-instrumentation` | 45 | 0.467 |
+| `sig-node` | 268 | 0.440 |
+| `sig-network` | 87 | 0.414 |
+| `sig-cli` | 37 | 0.405 |
+| `sig-api-machinery` | 95 | 0.368 |
+| `sig-auth` | 71 | 0.352 |
+| `sig-apps` | 90 | 0.333 |
+| `sig-scheduling` | 89 | **0.258** |
+
+The spread is real, not noise: `sig-storage` against `sig-scheduling` is **+0.229 [+0.105, +0.356]**, and `sig-node` against `sig-scheduling` is **+0.182 [+0.077, +0.283]**. Nearly a two-fold difference in slip rate between the most and least affected group, on the same release calendar and the same process.
+
+This is the one cut with a straightforward operational reading: whatever `sig-scheduling` does when it commits, it is worth asking about. The backtest cannot say what that is — it measures outcomes, not causes.
+
+**By stage:**
+
+| stage | rows | slip rate |
+|---|---|---|
+| alpha | 318 | 0.396 |
+| beta | 311 | 0.434 |
+| stable | 330 | 0.358 |
+
+**No significant difference.** Beta against stable is [−0.000, +0.153] — the interval touches zero. An earlier draft of this project told a story about beta being structurally weakest; that story was fitted to a pagination artifact, and with complete data the stages are flat. Reported here because the absence is the result.
+
+## What the program should change
+
+Four recommendations, each tied to a row above rather than to a prior.
+
+**1. Run the approval-gate check six weeks before the freeze, not four.** `gate_unassigned` is the best operational instrument in the set — 40% recall at 74% precision — but at the a priori `M = 4` its median lead is 3.3 weeks, which classifies it as *status*: it tells you about a problem you can no longer fix. The [sensitivity grid](out/k8s/sensitivity.csv) shows that at `M = 6` it reclassifies to *risk* and still scores lift **1.694 [1.567, 1.837]**. This is a one-parameter change that converts the most useful signal from a report into a warning.
+
+**2. Treat total silence as the escalation trigger, not owner silence.** An item nobody has touched in eight weeks slips at 89% precision. Narrowing the same check to the *listed owners* drops it to 70%, because owners delegate and the named author is frequently not the person implementing. Watch the work, not the roster.
+
+**3. Do not let the tracking label lapse — and do not depend on it either.** For four consecutive cycles the `tracked/yes` label was applied to no row at all. The organisation lost its own scope signal and, on this evidence, did not notice. The lesson is two-sided: the lapse is worth fixing, *and* the signals that survived it are the ones that read behaviour rather than bookkeeping.
+
+**4. Stop treating late commitment as a risk.** `late_target` is significantly **negative** at every parameter value tested — work committed close to the freeze slipped *less*. If a process penalises or flags late additions on risk grounds, this corpus says that intuition is backwards, most plausibly because a team committing late commits with better information.
+
+**One thing this cannot tell you.** None of the above is an intervention study. Every number here is observational, and a signal that predicts a slip is not evidence that acting on it prevents one — that requires an experiment, and is confounded even inside a single organisation. Spec §13 ruled it out of scope for exactly this reason.
+
 ## What these numbers cannot support
 
 The labeling rule requires positive evidence that code landed — a tracking issue closed in the milestone's window, or a `kubernetes/kubernetes` PR milestoned for that release merged. Rows with neither are `unresolved`: **290 rows, 23% of the corpus**, outcome unknown rather than failed. 105 of them carry a `kep.yaml` self-report claiming delivery, so the residual is work whose paper trail cannot be followed, not simply work that stalled.
@@ -199,6 +245,28 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 Requires Python 3.12+. Dependencies are `pyyaml`, `pandas`, `numpy`, `pytest` — nothing else.
 
 Outputs land in [`out/k8s/`](out/k8s/). For each of the two cuts: per-signal metrics at both evaluation points (`signals.csv`, `signals_at_freeze.csv`, and `*_full*` for the full sample), plus by-org and by-stage breakdowns. `rows.csv` carries row-level detail and every row's label; `sensitivity.csv` carries the a priori parameter grid.
+
+## Adding an adapter
+
+The corpus-specific parts sit behind one interface. A new corpus means writing `adapters/<corpus>/` exposing four functions, and nothing in `core/`, `signals/` or `backtest/` changes:
+
+```python
+fetch(cache_dir)  -> None            # idempotent, incremental, raw only
+milestones()      -> list[Milestone]
+org_units()       -> list[OrgUnit]
+events()          -> Iterable[Event]
+```
+
+plus a `LABELING.md` documenting the outcome rule, and a `config` naming the corpus's required owner roles.
+
+Three rules the shared conformance suite enforces, and one it cannot:
+
+- **`events()` must be deterministic** — two runs over the same cache produce identical output.
+- **Never normalise the raw cache in place.** Layout is `cache/<corpus>/<source>/…`, gitignored except `llm/`, which is committed so the repo reproduces without an API key.
+- **Every event carries a `source`** from the vocabulary in `core/model.py`.
+- **Every event must be timestamped with when the fact became true, not when you read it.** This is the one the suite cannot check for you, and it is the one that matters: a fabricated timestamp produces a pipeline that runs, emits plausible CSVs, and is wrong in a way no internal check can catch. [`docs/adapters/gitlab.md`](docs/adapters/gitlab.md) is a worked example of stopping for exactly this reason.
+
+Run `pytest tests/conformance/` against the new adapter. Six checks; all six are corpus-agnostic.
 
 ## Reading further
 
