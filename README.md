@@ -2,9 +2,15 @@
 
 **Can you tell which planned work is going to slip — early enough to do something about it — using only the artifacts teams already produce?**
 
-This project answers that question with a measurement instead of an opinion. It reconstructs what the Kubernetes project's roadmap said on every date across nineteen release cycles, asks three candidate risk signals what they thought at each of those dates, and scores them against what actually happened afterwards.
+This project answers that question with a measurement instead of an opinion. It reconstructs what the Kubernetes project's roadmap said on every date across nineteen release cycles, asks four candidate risk signals what they thought at each of those dates, and scores them against what actually happened afterwards. The fourth signal is the release team's own scope label, included as a control — because a signal that cannot beat the judgment an organisation already writes down is not worth building.
 
-The answer, on 1,255 committed deliverables: **one of the three signals works, one is actively backwards, and one depends on whether you can verify the outcome at all.** Details below, including the ones that failed.
+The answer, on 1,255 committed deliverables across six years:
+
+**Silence predicts slippage about as well as the release team's own label does, and the two find different failures — together they flag 7% of committed work with 92% precision, eight weeks before the deadline.** Then, partway through the corpus, the project stopped applying that label. The conjunction disappeared with it. The activity signal kept working unchanged.
+
+> Broken process hygiene is not only a risk signal in itself. It destroys the signals that depend on hygiene — exactly when you most need something that does not.
+
+Two of the four signals failed, and are reported as failures. **[`docs/findings.md`](docs/findings.md) is the full conclusion**, including what these numbers cannot support and the four errors this project made and corrected before arriving at them.
 
 ---
 
@@ -14,7 +20,9 @@ Every program manager wants the same thing: to know a commitment is in trouble w
 
 The alternative is to infer risk from the exhaust of the work itself: who owns it, how recently it moved, whether it has slipped before. Those are cheap, objective, and available without asking anyone. But "plausible-sounding indicator" is not the same as "predictive," and the difference can only be settled by testing against history.
 
-So: pick some signals, replay real history, and find out.
+There is a harder question underneath it, and most studies of this kind skip it: does any of that beat simply asking the people running the release? That question decided this one, so the release team's own scope label is measured alongside the inferred signals rather than assumed away.
+
+So: pick some signals, add the obvious baseline, replay real history, and find out.
 
 ## Why Kubernetes
 
@@ -133,4 +141,6 @@ Outputs land in [`out/k8s/`](out/k8s/): per-signal metrics and a by-team cut for
 
 ## Status
 
-Sprint 1 complete and merged: pipeline, three signals, first measured results. Sprint 2 complete: the fallthrough labeling rule is replaced with positive evidence of delivery drawn from release-team tracking issues and cross-referenced merges, `unresolved` is a first-class label, and results are published under both cuts. The figures above are the sprint-2 numbers.
+**Closed.** Sprint 1 built the pipeline and the first three signals. Sprint 2 replaced the fallthrough labeling rule with positive evidence of delivery, added `unresolved` as a first-class label, published both cuts, and built the S0 control that sprint 1 specified and skipped — which is what produced the conclusion above.
+
+Three items on sprint 1's list are deliberately not done and are recorded as such in [`docs/sprint-2-notes.md`](docs/sprint-2-notes.md) §4: real actors for the activity signal, a sensitivity grid over the a priori parameters, and a decision about right-censoring. [`docs/findings.md`](docs/findings.md) ends with what a continuation should tackle first — a learned model, the five untested signals, and a second corpus.
