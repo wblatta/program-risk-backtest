@@ -98,9 +98,48 @@ The labeling rule requires positive evidence that code landed — a tracking iss
 
 Recall is low throughout — the best instrument here flags a sixth of committed work. Most slippage is caught by none of these signals. The freeze evaluation point was chosen after seeing results, so treat specific lift values as suggestive. And this is one corpus: Kubernetes has unusually strong process hygiene, which makes it the best case for this method rather than a typical one.
 
-**No learned model was tested, and that was a design decision rather than an omission.** The original spec put LLMs in scope for *extraction* — reading prose to emit typed dependency events with a confidence score — and explicitly ruled out inference: *"no sentiment, no 'LLM thinks this is risky' — uncalibratable."* Running the backtest supplied the evidence for that call. Every conclusion here was wrong at least once, and each error was caught by tracing a signal back to specific inspectable facts; a score offers nothing to trace. The labels also carry ~8.5% known error over 379 positives, which is not a foundation to train on. [`docs/findings.md`](docs/findings.md) sets out the reasoning and what the model-shaped version of this project would actually be.
+**No learned model was tested. That was a design decision, not an omission — see the next section.**
 
 [`docs/findings.md`](docs/findings.md) states all of this in full, along with the four errors this project made and corrected — including a fetch bug that meant an earlier draft published conclusions drawn from 6% of the available data.
+
+## Why there is no model
+
+This project is often assumed to have been aiming at AI inference of risk from structured
+inputs. Worth being exact about what was scoped, because the answer is more interesting
+than "we ran out of time."
+
+LLMs *were* in scope, for a different job. The spec defines `source = llm`, a confidence
+field on LLM-sourced events, and an SHA-256-keyed LLM cache committed to the repo so
+results reproduce. Their role was **extraction, not prediction**: read unstructured KEP
+prose and emit typed `dependency_changed` events, so that deterministic signals could run
+over a richer event stream. That was sprint 3, and it was never reached.
+
+Prediction by model was ruled out in writing before any code existed:
+
+> Not signals, by design: anything read from prose except dependencies. No sentiment, no
+> "LLM thinks this is risky" — uncalibratable.
+
+|  | role | status |
+|---|---|---|
+| **LLM as extractor** | "this README says KEP-1234 blocks this one" → a typed event with confidence | in scope, deferred, never built |
+| **LLM as predictor** | "this KEP looks risky to me" → a score | excluded by design, as uncalibratable |
+
+Running the backtest supplied the evidence for a call the spec had only asserted. **Every
+conclusion in this README was wrong at least once**, and each error was caught by tracing a
+claim to specific rows — 475 timelines truncated at exactly 100 entries, 22 closures
+predating their own cycle, 195 merges attributed by date instead of by milestone. That
+tracing is possible because a firing means one inspectable fact: *no commit touched this
+directory between these two dates*. A model emits a score, and a wrong score has nothing to
+trace. **And the labels could not support training anyway**: 379 positives over 1,255 rows,
+a measured ~8.5% floor of known label error, 23% of outcomes unverifiable. A model fit
+before those two label defects surfaced would have encoded them invisibly — and validated
+against the same corrupted labels.
+
+The version of this worth building is not a risk classifier. It is the extraction path:
+use a model for what models are good at — turning prose into structure — and keep the
+prediction step inspectable. That also attacks coverage, which is the actual weakness here.
+[`docs/findings.md`](docs/findings.md#on-models-and-why-there-isnt-one) sets out the full
+reasoning.
 
 ## Findings about the data
 
@@ -124,7 +163,7 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 .venv/bin/python cli.py build      # events -> SQLite (walks git history; minutes)
 .venv/bin/python cli.py backtest   # -> out/k8s/*.csv (under a second)
 
-.venv/bin/pytest                   # 168 tests, incl. a conformance run on the real corpus
+.venv/bin/pytest                   # 188 tests, incl. a conformance run on the real corpus
 ```
 
 Requires Python 3.12+. Dependencies are `pyyaml`, `pandas`, `numpy`, `pytest` — nothing else.
@@ -145,4 +184,4 @@ Outputs land in [`out/k8s/`](out/k8s/): per-signal metrics and a by-team cut for
 
 **Closed.** Sprint 1 built the pipeline and the first three signals. Sprint 2 replaced the fallthrough labeling rule with positive evidence of delivery, added `unresolved` as a first-class label, published both cuts, and built the S0 control that sprint 1 specified and skipped — which is what produced the conclusion above.
 
-Three items on sprint 1's list are deliberately not done and are recorded as such in [`docs/sprint-2-notes.md`](docs/sprint-2-notes.md) §4: real actors for the activity signal, a sensitivity grid over the a priori parameters, and a decision about right-censoring. [`docs/findings.md`](docs/findings.md) ends with what a continuation should tackle first — a learned model, the five untested signals, and a second corpus.
+Three items on sprint 1's list are deliberately not done and are recorded as such in [`docs/sprint-2-notes.md`](docs/sprint-2-notes.md) §4: real actors for the activity signal, a sensitivity grid over the a priori parameters, and a decision about right-censoring. [`docs/findings.md`](docs/findings.md) ends with what a continuation should tackle first — the extraction path described above, the five untested signals, and a second corpus.
