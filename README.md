@@ -1,14 +1,25 @@
 # program-risk-backtest
 
+## TL;DR
+
+- **What it is.** An event-sourced backtest of delivery risk. It replays what the Kubernetes roadmap said on every date across 19 release cycles, asks ten candidate signals what they thought at each date, and scores them against outcomes they could not have seen. 1,255 committed deliverables, 2020–2026.
+- **The result.** Two independent checks — *nobody has touched the work in eight weeks* and *the required approval gate has no holder* — agree on **12% of committed work and are right about 94% of it**, eight weeks before the deadline. That significantly beats either alone and beats the release team's own scope label.
+- **The catch.** It misses three quarters of all slips. Precision is high, recall is low. A triage tool, not a safety net.
+- **The uncomfortable finding.** For three consecutive cycles the release team stopped applying its own scope label entirely, and did not appear to notice. Signals reading what people *did* got stronger through that period; the one reading what people *recorded* got weaker.
+- **Reported failures.** Of ten signals, four carry real information, four are indistinguishable from noise, one is significantly **negative** (work committed *late* slipped *less*), and one pair could not be tested at all. All three pre-registered hypotheses got a verdict, including the one that failed.
+- **No model, by design.** LLMs were scoped for *extraction*, not prediction — and the extraction path was built and measured. Its ceiling is the corpus, not the technique.
+- **Why one corpus.** 41 candidate projects were measured before declining to build a second. Only three non-Kubernetes projects clear the bar, and all three copied the Kubernetes process.
+- **Six errors, published.** Including one that meant an early draft drew conclusions from 6% of the available data. The corrections are in [`docs/findings.md`](docs/findings.md), and they are more instructive than the result.
+
 **Can you tell which planned work is going to slip — early enough to do something about it — using only the artifacts teams already produce?**
 
-This project answers that question with a measurement instead of an opinion. It reconstructs what the Kubernetes project's roadmap said on every date across nineteen release cycles, asks four candidate risk signals what they thought at each of those dates, and scores them against what actually happened afterwards. The fourth signal is the release team's own scope label, included as a control — because a signal that cannot beat the judgment an organisation already writes down is not worth building.
+This project answers that question with a measurement instead of an opinion. It reconstructs what the Kubernetes project's roadmap said on every date across nineteen release cycles, asks ten candidate risk signals what they thought at each of those dates, and scores them against what actually happened afterwards. One of the ten is the release team's own scope label, included as a control — because a signal that cannot beat the judgment an organisation already writes down is not worth building.
 
 The answer, on 1,255 committed deliverables across six years:
 
 **Two independent checks — nobody has touched the work in eight weeks, and the required approval gate has no holder — agree on 12% of committed deliverables and are right about 94% of them.** That is eight weeks before the deadline, and it significantly beats either check alone and the release team's own scope label. The trade is recall: it misses three quarters of all slips. This is a triage tool, not a safety net.
 
-Then the release team's tracking label went unapplied for four consecutive cycles. The signals that read what people *did* got stronger through that period. The one that read what people *recorded* got weaker.
+Then the release team's tracking label went unapplied for three consecutive cycles. The signals that read what people *did* got stronger through that period. The one that read what people *recorded* got weaker.
 
 > Broken process hygiene is not only a risk signal in itself. It destroys the signals that depend on hygiene — exactly when you most need something that does not.
 
@@ -174,7 +185,7 @@ Four recommendations, each tied to a row above rather than to a prior.
 
 **2. Treat total silence as the escalation trigger, not owner silence.** An item nobody has touched in eight weeks slips at 89% precision. Narrowing the same check to the *listed owners* drops it to 70%, because owners delegate and the named author is frequently not the person implementing. Watch the work, not the roster.
 
-**3. Do not let the tracking label lapse — and do not depend on it either.** For four consecutive cycles the `tracked/yes` label was applied to no row at all. The organisation lost its own scope signal and, on this evidence, did not notice. The lesson is two-sided: the lapse is worth fixing, *and* the signals that survived it are the ones that read behaviour rather than bookkeeping.
+**3. Do not let the tracking label lapse — and do not depend on it either.** For three consecutive cycles the `tracked/yes` label was applied to no row at all. The organisation lost its own scope signal and, on this evidence, did not notice. The lesson is two-sided: the lapse is worth fixing, *and* the signals that survived it are the ones that read behaviour rather than bookkeeping.
 
 **4. Stop treating late commitment as a risk.** `late_target` is significantly **negative** at every parameter value tested — work committed close to the freeze slipped *less*. If a process penalises or flags late additions on risk grounds, this corpus says that intuition is backwards, most plausibly because a team committing late commits with better information.
 
