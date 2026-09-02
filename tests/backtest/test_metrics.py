@@ -5,7 +5,7 @@ from core.model import Milestone
 
 UTC = timezone.utc
 M = Milestone("x:v31", 31, date(2024, 7, 10), date(2024, 8, 13), {})
-M31 = M
+M31 = M  # alias: the brief's test code names this M31
 MS = {M.id: M}
 def T(m, d): return datetime(2024, m, d, tzinfo=UTC)
 
@@ -68,3 +68,16 @@ def test_unknown_cut_is_rejected_rather_than_silently_defaulting():
     import pytest
     with pytest.raises(ValueError):
         signal_metrics(_rows(), {"x:v31": M31}, L=4, n_boot=10, cut="whatever")
+
+
+def test_by_org_respects_cut():
+    """One org, two rows: a real slip and an unresolved one. Pins that by_org applies the
+    cut the same way signal_metrics does -- if the two ever drift, this fails."""
+    rows = [Row("i1", "alpha", "x:v31", "x:o1", "slipped", {}),
+            Row("i2", "alpha", "x:v31", "x:o1", "unresolved", {})]
+    ev = by_org(rows, cut="evidenced").set_index("org_id")
+    assert ev.loc["x:o1", "rows"] == 1 and ev.loc["x:o1", "slips"] == 1 and ev.loc["x:o1", "slip_rate"] == 1.0
+    assert ev["cut"].iloc[0] == "evidenced"
+    full = by_org(rows, cut="full").set_index("org_id")
+    assert full.loc["x:o1", "rows"] == 2 and full.loc["x:o1", "slips"] == 1 and full.loc["x:o1", "slip_rate"] == 0.5
+    assert full["cut"].iloc[0] == "full"
