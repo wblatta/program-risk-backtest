@@ -115,9 +115,57 @@ The ordering is identical across both cuts and both evaluation points.
 
 The labeling rule requires positive evidence that code landed — a tracking issue closed in the milestone's window, or a `kubernetes/kubernetes` PR milestoned for that release merged. Rows with neither are `unresolved`: **290 rows, 23% of the corpus**, outcome unknown rather than failed. 105 of them carry a `kep.yaml` self-report claiming delivery, so the residual is work whose paper trail cannot be followed, not simply work that stalled.
 
-Recall is low throughout — the best instrument here flags a sixth of committed work. Most slippage is caught by none of these signals. The freeze evaluation point was chosen after seeing results, so treat specific lift values as suggestive. No learned model was tested; every signal is a hand-written rule. And this is one corpus: Kubernetes has unusually strong process hygiene, which makes it the best case for this method rather than a typical one.
+Recall is low throughout — the best instrument here flags a sixth of committed work. Most slippage is caught by none of these signals. The freeze evaluation point was chosen after seeing results, so treat specific lift values as suggestive. And this is one corpus: Kubernetes has unusually strong process hygiene, which makes it the best case for this method rather than a typical one.
 
-[`docs/findings.md`](docs/findings.md) states all of this in full, along with the four errors this project made and corrected — including a fetch bug that meant an earlier draft published conclusions drawn from 6% of the available data.
+**No learned model was tested. That was a design decision, not an omission — see the next section.**
+
+[`docs/findings.md`](docs/findings.md) states all of this in full, along with the six errors this project made and corrected — including a fetch bug that meant an earlier draft published conclusions drawn from 6% of the available data.
+
+## Why there is no model
+
+This project is often assumed to have been aiming at AI inference of risk from structured
+inputs. Worth being exact about what was scoped, because the answer is more interesting
+than "we ran out of time."
+
+LLMs *were* in scope, for a different job. The spec defines `source = llm`, a confidence
+field on LLM-sourced events, and an SHA-256-keyed LLM cache committed to the repo so
+results reproduce. Their role was **extraction, not prediction**: read unstructured KEP
+prose and emit typed `dependency_changed` events, so that deterministic signals could run
+over a richer event stream. **Sprint 3 built it**, and measured its ceiling.
+
+The extraction path is no longer hypothetical: it found **27 dependency edges across 617
+READMEs**, because only 18% of them reference a sibling KEP at all and most of those are
+citations rather than dependencies. A model would separate "depends on" from "related to"
+better than the regexes do — a real gain inside that 18%, and no way past it. The path was
+worth building and it is coverage-bound, not technique-bound.
+
+Prediction by model was ruled out in writing before any code existed:
+
+> Not signals, by design: anything read from prose except dependencies. No sentiment, no
+> "LLM thinks this is risky" — uncalibratable.
+
+|  | role | status |
+|---|---|---|
+| **LLM as extractor** | "this README says KEP-1234 blocks this one" → a typed event with confidence | **built**, as `prose-cue-v1` — 27 edges across 617 READMEs |
+| **LLM as predictor** | "this KEP looks risky to me" → a score | excluded by design, as uncalibratable |
+
+Running the backtest supplied the evidence for a call the spec had only asserted. **Every
+conclusion in this README was wrong at least once**, and each error was caught by tracing a
+claim to specific rows — 475 timelines truncated at exactly 100 entries, 22 closures
+predating their own cycle, 195 merges attributed by date instead of by milestone, an id
+namespace mismatch that would have made an owner-scoped signal fire on the entire corpus. That
+tracing is possible because a firing means one inspectable fact: *no commit touched this
+directory between these two dates*. A model emits a score, and a wrong score has nothing to
+trace. **And the labels could not support training anyway**: 379 positives over 1,255 rows,
+a measured ~8.5% floor of known label error, 23% of outcomes unverifiable. A model fit
+before those two label defects surfaced would have encoded them invisibly — and validated
+against the same corrupted labels.
+
+The version of this worth building is not a risk classifier. It is the extraction path:
+use a model for what models are good at — turning prose into structure — and keep the
+prediction step inspectable. That also attacks coverage, which is the actual weakness here.
+[`docs/findings.md`](docs/findings.md#on-models-and-why-there-isnt-one) sets out the full
+reasoning.
 
 ## Findings about the data
 
@@ -140,13 +188,15 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 .venv/bin/python cli.py fetch      # clone the source repos (a few minutes)
 .venv/bin/python cli.py build      # events -> SQLite (walks git history; minutes)
 .venv/bin/python cli.py backtest   # -> out/k8s/*.csv (under a second)
+.venv/bin/python cli.py sensitivity # -> the a priori parameter grid
+.venv/bin/python cli.py register --milestone k8s:v1.34   # live view for a cycle
 
-.venv/bin/pytest                   # 168 tests, incl. a conformance run on the real corpus
+.venv/bin/pytest                   # 283 tests, incl. a conformance run on the real corpus
 ```
 
 Requires Python 3.12+. Dependencies are `pyyaml`, `pandas`, `numpy`, `pytest` — nothing else.
 
-Outputs land in [`out/k8s/`](out/k8s/): per-signal metrics and a by-team cut for each of the two cuts (`signals.csv` / `by_org.csv` are evidenced, `*_full.csv` are the full sample), plus `rows.csv` with the row-level detail and every row's label.
+Outputs land in [`out/k8s/`](out/k8s/). For each of the two cuts: per-signal metrics at both evaluation points (`signals.csv`, `signals_at_freeze.csv`, and `*_full*` for the full sample), plus by-org and by-stage breakdowns. `rows.csv` carries row-level detail and every row's label; `sensitivity.csv` carries the a priori parameter grid.
 
 ## Reading further
 
@@ -156,10 +206,15 @@ Outputs land in [`out/k8s/`](out/k8s/): per-signal metrics and a by-team cut for
 | [`docs/sprint-1-notes.md`](docs/sprint-1-notes.md) | The first run in full: results, per-release histogram, and an extended section on what the numbers cannot support. Its manual audit validated the *sprint-1* labels, which this rule replaced |
 | [`docs/sprint-2-notes.md`](docs/sprint-2-notes.md) | The evidenced labeling rule, both cuts in full, and two corrections that invalidated earlier drafts of these numbers |
 | [`adapters/k8s/LABELING.md`](adapters/k8s/LABELING.md) | The outcome rule, normative — the doc states it, the code implements it, and they are kept in agreement |
+| [`docs/adapters/gitlab.md`](docs/adapters/gitlab.md) | The second corpus: full mapping, and the credential blocker that stopped it |
 | [`docs/superpowers/specs/`](docs/superpowers/specs/) | Design spec and the amendments execution forced |
 
 ## Status
 
-**Closed.** Sprint 1 built the pipeline and the first three signals. Sprint 2 replaced the fallthrough labeling rule with positive evidence of delivery, added `unresolved` as a first-class label, published both cuts, and built the S0 control that sprint 1 specified and skipped — which is what produced the conclusion above.
+Sprints 0–3 complete. Sprint 1 built the pipeline and the first three signals. Sprint 2 replaced the fallthrough labeling rule with positive evidence of delivery and added the S0 control. **Sprint 3** built the four remaining spec'd signals (S2, S3, S4a, S4b, S6), gave `activity` real actors so H1 could be tested as stated, added the dependency extraction that answers spec §14's open question, published the sensitivity grid and the `register` live view, and produced verdicts on all three hypotheses.
 
-Three items on sprint 1's list are deliberately not done and are recorded as such in [`docs/sprint-2-notes.md`](docs/sprint-2-notes.md) §4: real actors for the activity signal, a sensitivity grid over the a priori parameters, and a decision about right-censoring. [`docs/findings.md`](docs/findings.md) ends with what a continuation should tackle first — a learned model, the five untested signals, and a second corpus.
+All ten signals in spec §7 are built. All six conformance checks pass, on 283 tests.
+
+**Sprint 4 — the GitLab adapter — is blocked on a credential, not on design.** GitLab requires authentication for `resource_milestone_events` on every public project, and that endpoint is the timestamped history this project's entire leakage boundary depends on. Without it every `target_set` would carry a fabricated timestamp and the pipeline would emit numbers that are wrong in a way no internal check could catch. [`docs/adapters/gitlab.md`](docs/adapters/gitlab.md) records the full mapping, the measured endpoint statuses, and what unblocks it: a token with `read_api` scope.
+
+A second corpus remains the highest-value next step — and the one that could settle H2, since GitLab's issue-links API types dependencies explicitly, which is exactly what KEP prose does not.
