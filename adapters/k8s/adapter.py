@@ -5,6 +5,10 @@ from pathlib import Path
 from core.model import Event, EventKind as K, Milestone, OrgUnit, WorkItem
 from adapters.k8s import events as ev
 from adapters.k8s.config import CONFIG, REPOS
+import json as _json
+
+from adapters.k8s.delivery import load_delivery_evidence
+from adapters.k8s.tracking import label_events
 from adapters.k8s.exceptions import SkippedExceptionsFile, load_exceptions
 from adapters.k8s.fetch import clone_or_update
 from adapters.k8s.git_history import dir_activity, file_versions, list_kep_dirs
@@ -18,6 +22,12 @@ CALENDAR = Path(__file__).with_name("calendar.yaml")
 # A KEP whose kep.yaml declares this status is a dead end that should never win a
 # kep-number collision over a sibling directory that is still (or was) live.
 _COLLISION_LOSER_STATUSES = {"replaced", "superseded"}
+
+
+def _kep_number_of(item_id: str) -> int:
+    """Trailing int of a corpus-namespaced item id -- the KEP number, which is also the
+    tracking issue number (spec §5 amendment 2)."""
+    return int(item_id.rsplit("-", 1)[1])
 
 
 class K8sAdapter:
@@ -157,6 +167,16 @@ class K8sAdapter:
                 out += ev.kep_events(item_id, file_versions(repo, f"{d}/kep.yaml"))
                 out += ev.prr_events(item_id, file_versions(repo, f"keps/prod-readiness/{sig}/{dir_num}.yaml"))
                 out += ev.activity_events(item_id, dir_activity(repo, d))
+                # Tracking-issue labels, timestamped, so snapshot() can replay the
+                # release team's view during the cycle. S0 reads these; without them it
+                # would have to read today's labels, which is the team's final word and
+                # therefore a leak.
+                tp = self.cache / "github" / "timeline" / f"{_kep_number_of(item_id)}.json"
+                if tp.exists():
+                    try:
+                        out += label_events(item_id, _json.loads(tp.read_text()))
+                    except (ValueError, OSError):
+                        pass
             # known-milestone filter: drops a TARGET_SET (including a clear -- see
             # Ruling 5) whose milestone_id is outside the calendar's catalog. On the
             # real corpus this reads 0, not because the filter is dead code, but
@@ -187,5 +207,8 @@ class K8sAdapter:
         skipped: list[SkippedExceptionsFile] = []
         exceptions = load_exceptions(self.cache / "sig_release", skipped=skipped)
         self.skipped_exceptions = skipped
-        outcomes = outcome_events(base, self.milestones(), exceptions, self.today)
+        gh = self.cache / "github"
+        delivery = load_delivery_evidence(gh) if (gh / "issues").is_dir() else None
+        outcomes = outcome_events(base, self.milestones(), exceptions, self.today,
+                                  delivery=delivery)
         return sorted(base + outcomes, key=Event.sort_key)

@@ -6,8 +6,8 @@ from core.model import Event, EventKind, Milestone, SOURCES, corpus_of
 UTC = timezone.utc
 
 def test_vocabularies_pinned():
-    assert EventKind.ALL == {"target_set", "status_changed", "owner_changed", "dependency_changed", "activity", "outcome"}
-    assert SOURCES == {"git-history", "calendar", "exceptions", "derived"}
+    assert EventKind.ALL == {"target_set", "status_changed", "owner_changed", "dependency_changed", "activity", "label_changed", "outcome"}
+    assert SOURCES == {"git-history", "calendar", "exceptions", "derived", "tracking-issue"}
 
 def test_corpus_of():
     assert corpus_of("k8s:kep-2400") == "k8s"

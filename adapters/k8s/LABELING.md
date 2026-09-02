@@ -53,17 +53,50 @@ Precedence (first match wins):
 3. **exception_denied** — `exceptions.yaml` for `M` lists this KEP (by tracking-issue
    number, i.e. `_kep_number(item_id)`) with status not `approved`.
 4. **exception_granted** — `exceptions.yaml` for `M` lists this KEP with status `approved`.
-5. **shipped** — none of the above. **In v1 this means "not observed to slip", not
-   "verified shipped".** Sprint 2 adds `tracked/yes` at release and code-merge evidence
-   and reverses the precedence to verify shipping first.
+5. **shipped** — positive evidence the code landed for this milestone:
+   - the tracking issue closed between cycle start and 90 days after the milestone's
+     release, or
+   - a `kubernetes/kubernetes` PR cross-referenced from that issue, **milestoned for
+     this release**, was merged. Attribution is by the PR's own milestone rather
+     than by when it merged: a KEP's PRs land continuously across a multi-year
+     life, so a cycle-length window samples a slice of a stream instead of
+     identifying the work for that release. 96% of merged cross-references carry
+     a milestone.
+
+   The evidence kind is recorded on the outcome event's `evidence` payload key, so
+   every `shipped` row can name why it was called shipped.
+
+6. **unresolved** — none of the above matched and no delivery evidence exists.
+
+   **This is not a synonym for failure.** It means the outcome is unknown to this
+   instrument. The usual cause is that nobody linked the implementation back to the
+   tracking issue, not that the work stopped. Measured coverage: evidence exists for
+   64.2% of rows that v1 called shipped (521/811), and for 20.5% of rows it called
+   slipped (76/370). By stage: `alpha` 59.5% (153/257), `beta` 59.4% (155/261),
+   `stable` 72.9% (207/284).
+
+   An earlier version of this document reported 40.7% overall and `beta` at 18.8%,
+   and explained the stage gap as structural — closure being evidence about a KEP's
+   final stage and merges about its first. **That explanation was wrong.** Those
+   figures came from a timeline fetch truncated at page 1, which hid a median 64% of
+   each issue's history and hit long-lived KEPs hardest. With complete timelines and
+   milestone-based attribution, `alpha` and `beta` are within a point of each other
+   and no stage-structural effect survives.
+   `unresolved` is neither positive nor negative. `POSITIVE` remains
+   `{slipped, dropped, exception_denied}`.
+
+**Deliberately not used as evidence:** the release team's `tracked/yes` label. It
+appears on 51.8% of shipped rows and 40.0% of slipped ones — it records that the team
+was tracking the work and is not removed when the work fails.
 
 Outcome `ts` = `M.release` (end-of-day UTC). Source = `derived`.
 
 ## Positive class
 
-The five labels above partition into a **positive** and a **negative** class. This
-partition is part of the normative rule — `backtest/run.py`'s `POSITIVE` set implements
-exactly what is stated here, and the two must agree exactly:
+The labels above partition into a **positive**, a **negative**, and a neutral,
+excluded-from-either class. This partition is part of the normative rule —
+`backtest/run.py`'s `POSITIVE` set implements exactly what is stated here, and the two
+must agree exactly:
 
 | label | class | why |
 |---|---|---|
@@ -71,7 +104,8 @@ exactly what is stated here, and the two must agree exactly:
 | `dropped` | **positive** | the commitment was abandoned |
 | `exception_denied` | **positive** | the project itself refused to let the deliverable through |
 | `exception_granted` | negative | a **near-miss, not a miss**: the deliverable landed, with the project's explicit consent to land late in the cycle. Counting a granted exception as a failure would score the project's own working escape hatch as a defect. Reported separately as a near-miss rather than folded into either class silently. |
-| `shipped` | negative | the fallthrough — see rule 5, and read "not observed to slip" |
+| `shipped` | negative | positive evidence the code landed — see rule 5 |
+| `unresolved` | **neither** | no evidence either way — see rule 6. Excluded from `POSITIVE`, and not folded into the negative class either. |
 
 `exception_granted` is the load-bearing one: 65 rows of the first backtest sit in the
 negative class because of it, and moving them would move the base rate off 0.302. It is

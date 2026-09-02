@@ -12,12 +12,14 @@ class EventKind:
     OWNER_CHANGED = "owner_changed"
     DEPENDENCY_CHANGED = "dependency_changed"
     ACTIVITY = "activity"
+    LABEL_CHANGED = "label_changed"
     OUTCOME = "outcome"
-    ALL = frozenset({TARGET_SET, STATUS_CHANGED, OWNER_CHANGED, DEPENDENCY_CHANGED, ACTIVITY, OUTCOME})
+    ALL = frozenset({TARGET_SET, STATUS_CHANGED, OWNER_CHANGED, DEPENDENCY_CHANGED, ACTIVITY,
+                     LABEL_CHANGED, OUTCOME})
 
 
 # Adapter-output vocabulary, enforced by the conformance suite rather than by Event.__post_init__
-SOURCES = frozenset({"git-history", "calendar", "exceptions", "derived"})
+SOURCES = frozenset({"git-history", "calendar", "exceptions", "derived", "tracking-issue"})
 
 
 def corpus_of(id: str) -> str:

@@ -74,7 +74,7 @@ def test_fixture_adapter_conforms(fixture_adapter):
     prr = [e for e in ev if e.kind == K.OWNER_CHANGED and e.payload["role"] == "prr_approver"]
     assert prr and prr[0].ts == T(4, 1)
     outcome = [e for e in ev if e.kind == K.OUTCOME][0]
-    assert outcome.payload == {"milestone_id": "k8s:v1.31", "stage": "alpha", "result": "shipped"}
+    assert outcome.payload == {"milestone_id": "k8s:v1.31", "stage": "alpha", "result": "shipped", "evidence": None}
 
 
 @pytest.mark.integration

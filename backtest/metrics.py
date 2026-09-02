@@ -3,8 +3,20 @@ from __future__ import annotations
 from datetime import datetime
 import numpy as np
 import pandas as pd
-from backtest.run import POSITIVE, Row
+from backtest.run import POSITIVE, UNRESOLVED, Row
 from core.model import Milestone
+
+
+def _apply_cut(rows, cut: str):
+    """Evidenced: drop rows whose outcome is unknown. Full: keep them, counted as
+    not-positive. The two are published side by side because their difference is the
+    finding -- what the signals are worth where process hygiene held, against where it
+    did not."""
+    if cut == "evidenced":
+        return [r for r in rows if r.outcome != UNRESOLVED]
+    if cut == "full":
+        return list(rows)
+    raise ValueError(f"unknown cut {cut!r}; expected 'evidenced' or 'full'")
 
 
 def rows_frame(rows: list[Row]) -> pd.DataFrame:
@@ -21,7 +33,9 @@ def _lead_weeks(fired: datetime, m: Milestone) -> float:
     return (m.freeze - fired.date()).days / 7
 
 
-def signal_metrics(rows: list[Row], milestones_by_id: dict[str, Milestone], L: int, n_boot: int = 1000, seed: int = 0) -> pd.DataFrame:
+def signal_metrics(rows: list[Row], milestones_by_id: dict[str, Milestone], L: int, n_boot: int = 1000, seed: int = 0,
+                   cut: str = "evidenced") -> pd.DataFrame:
+    rows = _apply_cut(rows, cut)
     labeled = [r for r in rows if r.outcome is not None]
     y = np.array([r.outcome in POSITIVE for r in labeled])
     base = y.mean() if len(y) else float("nan")
@@ -56,14 +70,21 @@ def signal_metrics(rows: list[Row], milestones_by_id: dict[str, Milestone], L: i
                     # `lift` column and its CI; read them together.
                     "lead_class": ("risk" if med >= L else "status") if leads else "n/a",
                     "precision_ci_lo": plo, "precision_ci_hi": phi, "lift_ci_lo": llo, "lift_ci_hi": lhi})
-    return pd.DataFrame(out)
+    df = pd.DataFrame(out)
+    df.insert(0, "cut", cut)
+    return df
 
 
-def by_org(rows: list[Row]) -> pd.DataFrame:
+def by_org(rows: list[Row], cut: str = "evidenced") -> pd.DataFrame:
+    rows = _apply_cut(rows, cut)
     df = rows_frame([r for r in rows if r.outcome is not None])
     if df.empty:
-        return pd.DataFrame(columns=["org_id", "rows", "slips", "slip_rate"])
+        out = pd.DataFrame(columns=["org_id", "rows", "slips", "slip_rate"])
+        out.insert(0, "cut", cut)
+        return out
     df["slip"] = df["outcome"].isin(POSITIVE)
     g = df.groupby("org_id", dropna=False).agg(rows=("slip", "size"), slips=("slip", "sum")).reset_index()
     g["slip_rate"] = g["slips"] / g["rows"]
-    return g.sort_values("slip_rate", ascending=False)
+    g = g.sort_values("slip_rate", ascending=False)
+    g.insert(0, "cut", cut)
+    return g

@@ -85,12 +85,20 @@ def cmd_backtest(args) -> None:
         ms = [m for m in ms if m.ordinal >= args.min_minor or not m.is_scheduled]
     rows = run_backtest(evs, ms, orgs, CONFIG, SIGNALS, dict(DEFAULT_PARAMS))
     out = OUT / "k8s"; out.mkdir(parents=True, exist_ok=True)
-    table = signal_metrics(rows, {m.id: m for m in ms}, L=DEFAULT_PARAMS["L"])
-    table.to_csv(out / "signals.csv", index=False)
+    by_id = {m.id: m for m in ms}
     rows_frame(rows).to_csv(out / "rows.csv", index=False)
-    by_org(rows).to_csv(out / "by_org.csv", index=False)
-    print(f"{len(rows)} rows, {sum(r.outcome is not None for r in rows)} labeled")
-    print(table.to_string(index=False, float_format=lambda x: f"{x:.2f}"))
+
+    import collections
+    dist = collections.Counter(r.outcome for r in rows)
+    print(f"{len(rows)} rows | " + " ".join(f"{k}={v}" for k, v in sorted(dist.items(), key=lambda x: -x[1])))
+
+    for cut, sig_name, org_name in (("evidenced", "signals.csv", "by_org.csv"),
+                                    ("full", "signals_full.csv", "by_org_full.csv")):
+        table = signal_metrics(rows, by_id, L=DEFAULT_PARAMS["L"], cut=cut)
+        table.to_csv(out / sig_name, index=False)
+        by_org(rows, cut=cut).to_csv(out / org_name, index=False)
+        print(f"\n--- {cut} cut ---")
+        print(table.to_string(index=False, float_format=lambda x: f"{x:.3f}"))
 
 
 
@@ -122,6 +130,18 @@ def cmd_fetch_issues(args) -> None:
     recs, stopped = fetch_tracking(dest, numbers, client)
     print(f"  {len(recs)}/{len(numbers)} complete | requests={client.requests_made} "
           f"(304s={client.not_modified}) | budget remaining={client.remaining}")
+
+    # Completeness guard. GitHub paginates at 100; a timeline of exactly the page size
+    # is the signature of an unfollowed `Link: rel="next"`. That defect shipped once --
+    # 475 of 644 timelines truncated at 100, hiding a median 64% of each issue's life --
+    # and it was invisible because every downstream check compared the corpus to itself.
+    suspicious = [n for n, r in recs.items() if len(r.get("timeline") or []) % 100 == 0
+                  and r.get("timeline")]
+    if suspicious:
+        print(f"  WARNING: {len(suspicious)} timeline(s) are an exact multiple of the page "
+              f"size: {sorted(suspicious)[:10]}{' ...' if len(suspicious) > 10 else ''}")
+        print(f"  That can be coincidence, but it is also what an unfollowed next-link "
+              f"looks like. Verify before trusting evidence coverage.")
     if stopped:
         reset = client.reset_at.isoformat() if client.reset_at else "unknown"
         print(f"  stopped early to stay clear of the rate limit; budget resets at {reset}.")

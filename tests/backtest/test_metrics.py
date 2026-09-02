@@ -5,6 +5,7 @@ from core.model import Milestone
 
 UTC = timezone.utc
 M = Milestone("x:v31", 31, date(2024, 7, 10), date(2024, 8, 13), {})
+M31 = M  # alias: the brief's test code names this M31
 MS = {M.id: M}
 def T(m, d): return datetime(2024, m, d, tzinfo=UTC)
 
@@ -32,3 +33,51 @@ def test_by_org_counts():
 def test_rows_frame_has_one_col_per_signal():
     df = rows_frame(rows())
     assert set(df.columns) >= {"item_id", "stage", "milestone_id", "org_id", "outcome", "first_fired.good", "first_fired.bad"}
+
+
+from backtest.run import Row, UNRESOLVED
+
+
+def _rows():
+    """Two rows a signal fired on: one a real positive, one unresolved."""
+    return [Row("i1", "alpha", "x:v31", None, "slipped", {"s": T(5, 20)}),
+            Row("i2", "alpha", "x:v31", None, "unresolved", {"s": T(5, 20)}),
+            Row("i3", "alpha", "x:v31", None, "shipped", {"s": None})]
+
+
+def test_evidenced_cut_excludes_unresolved_rows():
+    df = signal_metrics(_rows(), {"x:v31": M31}, L=4, n_boot=10, cut="evidenced")
+    assert int(df["rows"].iloc[0]) == 2, "unresolved row must be dropped"
+    assert df["cut"].iloc[0] == "evidenced"
+
+
+def test_full_cut_counts_unresolved_as_negative():
+    df = signal_metrics(_rows(), {"x:v31": M31}, L=4, n_boot=10, cut="full")
+    assert int(df["rows"].iloc[0]) == 3, "all rows retained"
+    assert df["cut"].iloc[0] == "full"
+    # base rate is 1 positive of 3 rows -- unresolved counted as not-positive
+    assert abs(float(df["base_rate"].iloc[0]) - 1 / 3) < 1e-9
+
+
+def test_cut_column_is_first_so_a_csv_always_says_which_it_is():
+    df = signal_metrics(_rows(), {"x:v31": M31}, L=4, n_boot=10, cut="evidenced")
+    assert list(df.columns)[0] == "cut"
+
+
+def test_unknown_cut_is_rejected_rather_than_silently_defaulting():
+    import pytest
+    with pytest.raises(ValueError):
+        signal_metrics(_rows(), {"x:v31": M31}, L=4, n_boot=10, cut="whatever")
+
+
+def test_by_org_respects_cut():
+    """One org, two rows: a real slip and an unresolved one. Pins that by_org applies the
+    cut the same way signal_metrics does -- if the two ever drift, this fails."""
+    rows = [Row("i1", "alpha", "x:v31", "x:o1", "slipped", {}),
+            Row("i2", "alpha", "x:v31", "x:o1", "unresolved", {})]
+    ev = by_org(rows, cut="evidenced").set_index("org_id")
+    assert ev.loc["x:o1", "rows"] == 1 and ev.loc["x:o1", "slips"] == 1 and ev.loc["x:o1", "slip_rate"] == 1.0
+    assert ev["cut"].iloc[0] == "evidenced"
+    full = by_org(rows, cut="full").set_index("org_id")
+    assert full.loc["x:o1", "rows"] == 2 and full.loc["x:o1", "slips"] == 1 and full.loc["x:o1", "slip_rate"] == 0.5
+    assert full["cut"].iloc[0] == "full"

@@ -51,3 +51,45 @@ def test_waits_for_reset_when_secondary_limit_hits():
     c = GitHubClient(transport=t, sleep=slept.append)
     assert c.get_json("https://api.github.com/a") == {"ok": True}
     assert slept == [7], f"expected a single 7s sleep, got {slept}"
+
+
+def test_follows_link_rel_next_and_concatenates_pages():
+    """A paginated list endpoint must return every page, not just the first.
+
+    Fails against a client that ignores Link headers: it returns only page 1.
+    """
+    t = FakeTransport([
+        (200, hdr(100, Link='<https://api.github.com/x?page=2>; rel="next"'), b'[1, 2]'),
+        (200, hdr(99,  Link='<https://api.github.com/x?page=3>; rel="next"'), b'[3, 4]'),
+        (200, hdr(98), b'[5]'),
+    ])
+    c = GitHubClient(transport=t, sleep=lambda s: None)
+    assert c.get_json("https://api.github.com/x") == [1, 2, 3, 4, 5]
+    assert len(t.requests) == 3, "should have followed next twice"
+
+
+def test_pagination_stops_when_no_next_link():
+    t = FakeTransport([(200, hdr(100), b'[1, 2]')])
+    c = GitHubClient(transport=t, sleep=lambda s: None)
+    assert c.get_json("https://api.github.com/x") == [1, 2]
+    assert len(t.requests) == 1
+
+
+def test_does_not_paginate_a_non_list_response():
+    """An issue is a dict; following next on it would be meaningless."""
+    t = FakeTransport([(200, hdr(100, Link='<https://api.github.com/x?page=2>; rel="next"'), b'{"n": 1}')])
+    c = GitHubClient(transport=t, sleep=lambda s: None)
+    assert c.get_json("https://api.github.com/x") == {"n": 1}
+    assert len(t.requests) == 1
+
+
+def test_backoff_uses_attempt_count_not_lifetime_request_count():
+    """2 ** requests_made would sleep for years once the client has been used a while."""
+    t = FakeTransport([(200, hdr(500), b'[]')] * 40 + [(500, hdr(500), b'err'), (200, hdr(499), b'[]')])
+    slept = []
+    c = GitHubClient(transport=t, sleep=slept.append)
+    for _ in range(40):
+        c.get_json("https://api.github.com/warm")
+    slept.clear()
+    c.get_json("https://api.github.com/boom")
+    assert slept and max(slept) <= 8, f"backoff should be small on a first retry, got {slept}"
