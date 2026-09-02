@@ -94,3 +94,31 @@ inaccessible endpoints — a fetch layer that cannot be run against the real API
 with tests around it.
 
 The K8s finding ships alone, which is the fallback the spec provided for.
+
+---
+
+## Superseded: the second corpus should be on GitHub
+
+GitLab was set aside in favour of another GitHub project, for two reasons that have
+nothing to do with the 401s above.
+
+**A second corpus is a proxy either way.** GitLab is not related to Kubernetes, and
+running the pipeline on it would not validate the Kubernetes finding — it would test
+whether the *method* survives contact with different data. Any second corpus does that
+equally well, and the spec is deliberately modest about the claim: generality is asserted
+"only to the extent a second adapter passes conformance and produces a finding."
+
+**GitHub already supplies the one endpoint GitLab withholds.** The timeline API carries
+`milestoned` / `demilestoned` events with `created_at` and the milestone title — the same
+point-in-time target history `resource_milestone_events` would have given. The rate-limited
+client in `adapters/k8s/github.py` already handles it, and no new credential is needed.
+
+What GitLab uniquely offered was **typed dependency edges** (`blocks` / `is_blocked_by`),
+which would have made H2 testable. That is a real loss and it is recorded as such: H2 stays
+open, because neither KEP prose nor GitHub cross-references carry a relation type. Answering
+H2 on GitLab would have answered it *for GitLab* — it could never have answered it here.
+
+Candidate selection for the GitHub corpus is measured rather than assumed, by
+`tools/corpus_survey.py`. The decisive property is retargeting: a `slipped` outcome exists
+only because work is moved between releases and leaves a timestamped trace, and a repo
+without it has no positive class to predict.
