@@ -1,6 +1,7 @@
+import pandas as pd
 from datetime import date, datetime, timezone
 from backtest.run import Row
-from backtest.metrics import signal_metrics, by_org, rows_frame
+from backtest.metrics import signal_metrics, by_org, by_stage, rows_frame
 from core.model import Milestone
 
 UTC = timezone.utc
@@ -81,3 +82,88 @@ def test_by_org_respects_cut():
     full = by_org(rows, cut="full").set_index("org_id")
     assert full.loc["x:o1", "rows"] == 2 and full.loc["x:o1", "slips"] == 1 and full.loc["x:o1", "slip_rate"] == 0.5
     assert full["cut"].iloc[0] == "full"
+
+
+# --- by_stage (spec §8: "Cuts: by org unit, by stage, S0 vs each signal") ---
+
+def test_by_stage_counts():
+    """Stage is the axis spec §8 names alongside org, and the one the labeling design
+    predicted would differ (closure evidence is weighted toward a KEP's final stage)."""
+    df = by_stage(rows()).set_index("stage")
+    assert df.loc["alpha", "rows"] == 3 and df.loc["alpha", "slips"] == 2
+    assert df.loc["alpha", "slip_rate"] == 2 / 3
+    assert df.loc["beta", "rows"] == 1 and df.loc["beta", "slip_rate"] == 0.0
+
+def test_by_stage_labels_its_cut():
+    """Every table states its cut. A number that does not say which cut it is, is a defect."""
+    assert by_stage(rows(), cut="full")["cut"].unique().tolist() == ["full"]
+
+def test_by_stage_excludes_unlabeled_rows():
+    """A row with outcome None is held-out, not a negative -- it must not dilute the rate."""
+    rs = rows() + [Row("x:e", "alpha", M.id, "x:o1", None, {"good": None, "bad": None})]
+    assert by_stage(rs).set_index("stage").loc["alpha", "rows"] == 3
+
+def test_by_stage_empty_input_keeps_schema():
+    df = by_stage([])
+    assert list(df.columns) == ["cut", "stage", "rows", "slips", "slip_rate"]
+
+
+# --- evaluation mode: first-fired vs at-freeze ---
+
+def _mode_rows():
+    """`s` fired early on i1 but is no longer firing at the freeze; on i2 it fires at the
+    freeze. Under first-fired both count; under at-freeze only i2 does."""
+    return [Row("i1", "alpha", M.id, None, "shipped", {"s": T(5, 1)}, {"s": False}),
+            Row("i2", "alpha", M.id, None, "slipped", {"s": T(5, 1)}, {"s": True}),
+            Row("i3", "alpha", M.id, None, "shipped", {"s": None}, {"s": False})]
+
+def test_first_fired_is_the_default_mode():
+    df = signal_metrics(_mode_rows(), MS, L=4, n_boot=0).set_index("signal")
+    assert df.loc["s", "fired"] == 2 and df.loc["s", "precision"] == 0.5
+    assert df.loc["s", "eval"] == "first_fired"
+
+def test_at_freeze_mode_scores_only_what_is_firing_at_the_decision_point():
+    df = signal_metrics(_mode_rows(), MS, L=4, n_boot=0, evaluation="at_freeze").set_index("signal")
+    assert df.loc["s", "fired"] == 1 and df.loc["s", "precision"] == 1.0
+    assert df.loc["s", "eval"] == "at_freeze"
+
+def test_at_freeze_reports_no_lead_time():
+    """Lead is meaningless at a fixed evaluation point -- it is zero for every firing by
+    construction. Reporting it would invite comparison against first-fired leads."""
+    df = signal_metrics(_mode_rows(), MS, L=4, n_boot=0, evaluation="at_freeze").set_index("signal")
+    assert pd.isna(df.loc["s", "median_lead_weeks"]) and df.loc["s", "lead_class"] == "n/a"
+
+def test_unknown_evaluation_mode_is_rejected():
+    import pytest as _p
+    with _p.raises(ValueError):
+        signal_metrics(_mode_rows(), MS, L=4, n_boot=0, evaluation="whenever")
+
+
+# --- right-censoring ---
+
+from backtest.metrics import CENSOR_DAYS, uncensored_milestones
+
+def test_recent_milestones_are_censored():
+    """A slip is recorded when work is retargeted *after* the freeze, which happens during
+    the following cycle. A milestone released last week has had no chance to accumulate
+    slips, so its rows are not observations -- they are unfinished ones."""
+    from datetime import date as _d
+    ms = [Milestone("x:v1", 1, _d(2025, 1, 10), _d(2025, 2, 10), {}),
+          Milestone("x:v2", 2, _d(2026, 7, 10), _d(2026, 8, 26), {})]
+    keep = uncensored_milestones(ms, today=_d(2026, 9, 2))
+    assert [m.id for m in keep] == ["x:v1"]
+
+def test_the_cutoff_is_a_parameter_not_a_constant():
+    from datetime import date as _d
+    ms = [Milestone("x:v2", 2, _d(2026, 7, 10), _d(2026, 4, 22), {})]
+    assert uncensored_milestones(ms, today=_d(2026, 9, 2), days=100) == ms
+    assert uncensored_milestones(ms, today=_d(2026, 9, 2), days=180) == []
+
+def test_unscheduled_milestones_are_dropped():
+    from datetime import date as _d
+    assert uncensored_milestones([Milestone("x:v9", 9, None, None, {})], today=_d(2026, 9, 2)) == []
+
+def test_default_cutoff_exceeds_one_release_cycle():
+    """The window has to be longer than the cycle that would reveal the slip, or the
+    correction does not correct anything."""
+    assert CENSOR_DAYS >= 120

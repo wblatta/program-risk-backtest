@@ -560,3 +560,48 @@ unless contradicted here. Every number below is measured on the clone of
     does not silently re-commit it. Nothing reads it: the spike's *findings*
     live in the planning amendments and in `calendar.yaml`, both of which are
     committed and current.
+
+## Amendments (sprint 3, 2026-09-02)
+
+### §14's open questions, answered
+
+They were assigned to sprint 0 and answered across sprints 0–3. Recording the
+resolutions here, beside the questions, because they were scattered across three
+notes files and one was never answered at all until now.
+
+1. **Where the release calendar lives and whether it is parseable.** `kubernetes/sig-release`,
+   per-release directories, parseable. `adapters/k8s/calendar.yaml` is the committed
+   result; `milestones.py` builds `k8s:v1.0`–`v1.60` placeholders so an out-of-range
+   target is detectable rather than silently dropped.
+2. **Whether exception requests are structured enough to label.** Yes, mostly:
+   `exceptions.yaml` per release. One file (v1.20) is unparseable YAML and is skipped
+   with a count printed. `exception_denied` is presently *unreachable* — rule 1
+   (`slipped`) is evaluated first and a refused exception always retargets — which is a
+   vocabulary defect, not a measurement one. See `adapters/k8s/LABELING.md`.
+3. **Whether SIGs update `milestone.*` on a miss.** Not reliably, and this drove the
+   whole sprint-2 relabeling. `shipped` was the fallthrough case with a provable 8.5%
+   error floor running one direction. Replaced by positive delivery evidence with
+   `unresolved` as a first-class label; 23% of rows land there.
+4. **How KEP READMEs phrase dependencies — pattern or LLM.** *Neither.* Answered in
+   sprint 3: 109 of 617 READMEs (18%) reference another KEP at all, the most common
+   match is the document's own title, and most of the rest are related-work citations.
+   A model would separate "depends on" from "related to" better than a regex inside
+   that 18% and cannot get past it. **The corpus does not record dependencies**, which
+   is why H2 is untested rather than answered. See `adapters/k8s/extract_deps.py`.
+5. **What the cheapest honest definition of `activity` is.** Two, reported separately,
+   because the difference turned out to be the H1 result. Git commits touching the KEP
+   directory carry no usable actor. Tracking-issue timeline entries do — 47,573 events
+   from 2,147 named logins — restricted to types where a person acted on the work, with
+   bots marked and held apart from human activity.
+6. **Which cycles are comparable.** v1.19 onward; earlier cycles predate the tracking
+   format. v1.36/v1.37 remain in the headline figures and the right-censoring decision
+   is still only partially made — recorded in `docs/sprint-2-notes.md` §4.
+
+### The retro spot-check (§12, sprint 3) is refuted, not skipped
+
+Sprint 3 scheduled a "retro spot-check" against release retrospectives. There are none:
+zero files matching `retro`/`retrospective`/`postmortem` anywhere in the
+`kubernetes/sig-release` clone, and `kubernetes/community` carries only contributor-summit
+and 2016 SIG retros. The task's source does not exist. Recorded in
+`docs/TPM_StudyGuide.md`; the ten-row manual audit against the tracking issues themselves
+is what replaced it.

@@ -1,0 +1,7 @@
+cut,stage,rows,slips,slip_rate
+full,alpha,422,126,0.2985781990521327
+full,beta,417,135,0.3237410071942446
+full,stable,407,118,0.28992628992628994
+full,deprecated,6,0,0.0
+full,removed,2,0,0.0
+full,disabled,1,0,0.0

@@ -1,18 +1,41 @@
 # program-risk-backtest
 
+## TL;DR
+
+- **What it is.** An event-sourced backtest of delivery risk. It replays what the Kubernetes roadmap said on every date across 19 release cycles, asks ten candidate signals what they thought at each date, and scores them against outcomes they could not have seen. 1,255 committed deliverables, 2020–2026.
+- **The result.** Two independent checks — *nobody has touched the work in eight weeks* and *the required approval gate has no holder* — agree on **12% of committed work and are right about 94% of it**, eight weeks before the deadline. That significantly beats either alone and beats the release team's own scope label.
+- **The catch.** It misses three quarters of all slips. Precision is high, recall is low. A triage tool, not a safety net.
+- **The uncomfortable finding.** For three consecutive cycles the release team stopped applying its own scope label entirely, and did not appear to notice. Signals reading what people *did* got stronger through that period; the one reading what people *recorded* got weaker.
+- **Reported failures.** Of ten signals, four carry real information, four are indistinguishable from noise, one is significantly **negative** (work committed *late* slipped *less*), and one pair could not be tested at all. All three pre-registered hypotheses got a verdict, including the one that failed.
+- **No model, by design.** LLMs were scoped for *extraction*, not prediction — and the extraction path was built and measured. Its ceiling is the corpus, not the technique.
+- **Why one corpus.** 41 candidate projects were measured before declining to build a second. Only three non-Kubernetes projects clear the bar, and all three copied the Kubernetes process.
+- **Six errors, published.** Including one that meant an early draft drew conclusions from 6% of the available data. The corrections are in [`docs/findings.md`](docs/findings.md), and they are more instructive than the result.
+
 **Can you tell which planned work is going to slip — early enough to do something about it — using only the artifacts teams already produce?**
 
-This project answers that question with a measurement instead of an opinion. It reconstructs what the Kubernetes project's roadmap said on every date across nineteen release cycles, asks four candidate risk signals what they thought at each of those dates, and scores them against what actually happened afterwards. The fourth signal is the release team's own scope label, included as a control — because a signal that cannot beat the judgment an organisation already writes down is not worth building.
+This project answers that question with a measurement instead of an opinion. It reconstructs what the Kubernetes project's roadmap said on every date across nineteen release cycles, asks ten candidate risk signals what they thought at each of those dates, and scores them against what actually happened afterwards. One of the ten is the release team's own scope label, included as a control — because a signal that cannot beat the judgment an organisation already writes down is not worth building.
 
 The answer, on 1,255 committed deliverables across six years:
 
-**Silence predicts slippage about as well as the release team's own label does, and the two find different failures — together they flag 7% of committed work with 92% precision, eight weeks before the deadline.** Then, partway through the corpus, the project stopped applying that label. The conjunction disappeared with it. The activity signal kept working unchanged.
+**Two independent checks — nobody has touched the work in eight weeks, and the required approval gate has no holder — agree on 12% of committed deliverables and are right about 94% of them.** That is eight weeks before the deadline, and it significantly beats either check alone and the release team's own scope label. The trade is recall: it misses three quarters of all slips. This is a triage tool, not a safety net.
+
+Then the release team's tracking label went unapplied for three consecutive cycles. The signals that read what people *did* got stronger through that period. The one that read what people *recorded* got weaker.
 
 > Broken process hygiene is not only a risk signal in itself. It destroys the signals that depend on hygiene — exactly when you most need something that does not.
 
-Two of the four signals failed, and are reported as failures. **[`docs/findings.md`](docs/findings.md) is the full conclusion**, including what these numbers cannot support and the four errors this project made and corrected before arriving at them.
+Ten signals were tested. Four carry real information, four are indistinguishable from noise, one is significantly *negative*, and one pair could not be tested at all — each reported. **[`docs/findings.md`](docs/findings.md) is the full conclusion**, including verdicts on all three hypotheses and the six things this project got wrong before arriving at them.
 
----
+## The three hypotheses, tested
+
+The spec committed to three hypotheses before any code existed, and to reporting a verdict on each — *"including the one that fails."* All three now have one.
+
+| | hypothesis | verdict |
+|---|---|---|
+| **H1** | items whose **listed owners** are inactive slip more | **Half right, wrong mechanism.** Silence predicts strongly (lift 2.101). Narrowing to the *listed owners* makes it significantly worse (1.671). What predicts is that the work is untouched, not that the owner is absent — owners delegate, and the named author is often not the person implementing. |
+| **H2** | a stale dependency is a leading indicator | **Untestable on this corpus.** Both dependency signals are null on 15 and 56 firings. Only 18% of KEP READMEs reference a sibling at all, and those references carry no relation type. You cannot test a dependency hypothesis against a source that does not record dependencies. |
+| **H3** | signals separate by lead time into actionable vs too-late | **Supported, but mostly definitional.** They do separate, and the second-best signal lands on the too-late side. But its lead is capped by its own window parameter: widen that window from 4 weeks to 6 and it becomes actionable *and* stays predictive (lift 1.694). The lead was a parameter choice, not a property of the failure. |
+
+H1's verdict was invisible for two sprints. Git author emails do not map to GitHub handles, so the signal named `hollow_owner` was in fact measuring anonymous silence — the tracking-issue timelines, and 47,573 activity events from 2,147 named people, are what made the stated hypothesis answerable at all.
 
 ## The problem
 
@@ -50,7 +73,9 @@ git repos ──► adapter ──► event stream ──► point-in-time snaps
 
 **Signals** are pure functions over a snapshot. They see only what was knowable on that date and cannot reach the adapter or the outcome.
 
-**The backtest** takes weekly snapshots across each release cycle, records the first date each signal fired for each commitment, and joins that to an outcome the signal could not have seen.
+**The backtest** takes weekly snapshots across each release cycle, records both the first date each signal fired and whether it is still firing at the freeze, and joins that to an outcome the signal could not have seen. A sensitivity grid re-runs the whole thing across the a priori parameters so the published choice can be checked rather than trusted.
+
+**`register`** runs every signal on today's snapshot for a live cycle and splits the firings into *risk* (early enough to act on) and *status* (fires too late), each annotated with the precision it actually achieved in the backtest. An MCP wrapper exposes the same queries as read-only tools.
 
 The corpus-specific parts live behind an adapter interface with a conformance suite that any new corpus must pass, so pointing this at a different organisation's data is a matter of writing one adapter — not rewriting the analysis.
 
@@ -70,37 +95,150 @@ Those tests place their fixtures at the *exact* boundary second and were each ve
 
 **[`docs/findings.md`](docs/findings.md) is the conclusion.** What follows is the summary.
 
-Four signals were tested against 1,255 committed deliverables across 19 release cycles. One works, one is backwards, one is null, and the fourth is the project's own status label included as a control. Results are published under two cuts — `evidenced` (only rows whose outcome can be verified) and `full` (all rows, unknowns counted as not-delivered) — because 23% of outcomes cannot be confirmed from the corpus. Compare the lift column across cuts and nothing else; the base rates differ.
+Ten signals were tested against 1,255 committed deliverables across 19 release cycles. Results are published under two cuts — `evidenced` (only rows whose outcome can be verified) and `full` (all rows, unknowns counted as not-delivered), because 23% of outcomes cannot be confirmed — and at two evaluation points: `first_fired` during the cycle, and `at_freeze` when the commitment locks. Compare the lift column within a cut and evaluation point, never across; the base rates differ and so do the questions.
 
-**Evaluated at the enhancements freeze, evidenced cut** (n=965, base rate 0.393):
+**At the enhancements freeze, evidenced cut, excluding the two censored cycles** (n=855, base rate 0.434):
 
-| signal | what it looks for | fires | precision | **lift** | 95% CI |
-|---|---|---|---|---|---|
-| `hollow_owner` | nobody has touched it in N weeks | 160 | 0.856 | **2.18** | 2.01 – 2.37 |
-| `tracked/no` | the release team says it is out of scope | 116 | 0.767 | **1.95** | 1.75 – 2.17 |
-| **both together** | | 72 | **0.917** | **2.33** | 2.12 – 2.57 |
+| signal | what it looks for | fires | precision | recall | **lift** | 95% CI |
+|---|---|---|---|---|---|---|
+| `item_silent` | nobody has touched it in 8 weeks | 68 | 0.912 | 0.167 | **2.101** | 1.91 – 2.32 |
+| `gate_unassigned` | the required approval gate has no holder | 200 | 0.755 | 0.407 | **1.740** | 1.60 – 1.90 |
+| `hollow_owner` | no *listed owner* has touched it | 171 | 0.725 | 0.334 | **1.671** | 1.51 – 1.83 |
+| `process_tracked` | **the control** — the team's own scope label | 331 | 0.637 | 0.569 | **1.469** | 1.36 – 1.57 |
+| `org_overcommitted` | the org committed past its best-ever cycle | 621 | 0.459 | 0.768 | 1.058 | 1.01 – 1.10 |
+| `prior_slip` | it has been retargeted before | 330 | 0.455 | 0.404 | 1.048 | 0.95 – 1.15 |
+| `cross_org` | more than one org is involved | 389 | 0.450 | 0.472 | 1.037 | 0.95 – 1.12 |
+| `dep_inactive` | something it depends on has gone quiet | 56 | 0.411 | 0.062 | 0.947 | 0.68 – 1.24 |
+| `late_target` | committed close to the freeze | 532 | 0.342 | 0.491 | **0.788** | 0.73 – 0.85 |
+| `dep_ordering_conflict` | a dependency lands no earlier than this | 15 | 0.333 | 0.013 | 0.768 | 0.23 – 1.39 |
 
-**Silence is a real predictor, and it is the durable one.** `hollow_owner` is significant on both cuts and never falls below the base rate in any cycle.
+**Two cycles are excluded because their outcomes have not happened yet.** v1.36 and v1.37 released 133 and 7 days before this was written, and read slip rates of 0.135 and 0.017 against a corpus norm near 0.45 — not better cycles, unfinished ones. A slip is recorded when work is retargeted *after* its freeze, which happens during the following cycle. Including them deflates the base rate and therefore **inflates every lift measured against it**, by 5–8% here. Both views are published in [`out/k8s/`](out/k8s/).
 
-**The project's own label is just as good — while it is maintained.** On the evidenced cut our signal is significantly ahead; on the full cut the difference vanishes. Neither dominates.
+The ordering is identical across both cuts, both evaluation points and both censoring views — eight tables, one ranking.
 
-**Together they are much better than either.** They overlap on only 39% of firings and the conjunction beats both, significantly, on both cuts: 92% precision on 7% of the corpus, eight weeks before the deadline.
+**Silence is the strongest predictor, and it beats the organisation's own judgment.** Three signals clear the `process_tracked` control, the bar sprint 1 set: *a signal that cannot beat the project's own status field is not worth reporting.* An earlier draft of this README reported the human label as comparable to the best signal; that was measured before real actor data existed and against a different form of the label, and it no longer holds.
 
-**And then the label was abandoned.** After v1.27 the release team stopped applying `tracked/no` by the freeze — from 4–20 firings per cycle to 1. The conjunction does not exist in any recent cycle. `hollow_owner` in the same period held at 0.846 precision and *rose* to lift 2.52.
+**`gate_unassigned` is the one you would actually deploy.** `item_silent` is more precise but flags a sixth of the work; the gate check reaches 41% recall at 76% precision, and the [sensitivity grid](out/k8s/sensitivity.csv) shows that running it six weeks out instead of four keeps it predictive (lift 1.694) while making it early enough to act on.
+
+**And then the label was abandoned.** In v1.28, v1.29 and v1.30 the release team applied `tracked/yes` to **no row at all** (61/61, 65/65, 74/74 rows unlabelled), and to one row in 58 in v1.31, before partially resuming. Comparing v1.19–27 against v1.28–35, every activity-derived signal got *stronger* — `item_silent` from lift 1.860 to 2.161, `gate_unassigned` from 1.547 to 1.962 — while the label-derived control declined from 1.239 to 1.073.
 
 > Broken process hygiene is not only a risk signal in itself. It destroys the signals that depend on hygiene — exactly when you most need something that does not.
 
-**Two signals did not work, reported because a study that only surfaces its successes is not a study.** `prior_slip` ("it slipped before") is indistinguishable from no effect under both cuts. `late_target` is *negatively* predictive with its whole interval below 1.0 — work committed close to the freeze slipped **less**, most plausibly because a team committing late commits with better information.
+**Half the signals did not work, reported because a study that only surfaces its successes is not a study.** `prior_slip`, `cross_org` and `org_overcommitted` are indistinguishable from noise. Both dependency signals are null on too few firings to decide anything. And `late_target` is *negatively* predictive with its whole interval below 1.0 at every parameter value tested — work committed close to the freeze slipped **less**, most plausibly because a team committing late commits with better information.
+
+## Signals in combination
+
+The table above asks "does this predict". The question a release lead actually has is different: *if I act only when two independent checks agree, how often am I right?*
+
+| combination | fires | precision | recall | **lift** | 95% CI |
+|---|---|---|---|---|---|
+| **`gate_unassigned` AND `item_silent`** | 100 (11.7%) | **0.940** | 0.253 | **2.166** | 2.00 – 2.37 |
+| `gate_unassigned` AND `hollow_owner` | 146 (17.1%) | 0.877 | 0.345 | 2.020 | 1.86 – 2.21 |
+| `gate_unassigned` AND `process_tracked` | 163 (19.1%) | 0.865 | 0.380 | 1.994 | 1.83 – 2.17 |
+| `item_silent` alone, for reference | 121 (14.2%) | 0.868 | 0.283 | 2.000 | 1.83 – 2.19 |
+
+The best pair is **significantly** better than either parent — +0.167 [+0.064, +0.290] over `item_silent`, +0.449 [+0.304, +0.610] over `gate_unassigned` — tested by paired bootstrap on the difference rather than by eyeballing overlapping intervals. They overlap on only 43% of their combined firings, which is why the pair adds anything: silence is filtering the gate check's false positives with an independent signal.
+
+**And it misses 277 of 371 slips.** Stated plainly because a 94% precision figure invites the wrong reading. If you can look at a dozen items, these are the dozen; if you need to catch most failures, nothing here does that.
+
+One row is deliberately not a finding: `item_silent AND hollow_owner` reproduces `item_silent` exactly, because silence-from-everyone is *necessarily* a subset of no-listed-owner-activity. The analysis flags the containment instead of publishing a duplicate. It is a correctness check on both implementations, and it passes.
+
+## Who slips, and where
+
+Two cuts the signal table cannot show, both evidenced, base rate 0.393.
+
+**By SIG** (owning org, ≥25 rows):
+
+| SIG | rows | slip rate |
+|---|---|---|
+| `sig-storage` | 117 | **0.487** |
+| `sig-instrumentation` | 45 | 0.467 |
+| `sig-node` | 268 | 0.440 |
+| `sig-network` | 87 | 0.414 |
+| `sig-cli` | 37 | 0.405 |
+| `sig-api-machinery` | 95 | 0.368 |
+| `sig-auth` | 71 | 0.352 |
+| `sig-apps` | 90 | 0.333 |
+| `sig-scheduling` | 89 | **0.258** |
+
+The spread is real, not noise: `sig-storage` against `sig-scheduling` is **+0.229 [+0.105, +0.356]**, and `sig-node` against `sig-scheduling` is **+0.182 [+0.077, +0.283]**. Nearly a two-fold difference in slip rate between the most and least affected group, on the same release calendar and the same process.
+
+This is the one cut with a straightforward operational reading: whatever `sig-scheduling` does when it commits, it is worth asking about. The backtest cannot say what that is — it measures outcomes, not causes.
+
+**By stage:**
+
+| stage | rows | slip rate |
+|---|---|---|
+| alpha | 318 | 0.396 |
+| beta | 311 | 0.434 |
+| stable | 330 | 0.358 |
+
+**No significant difference.** Beta against stable is [−0.000, +0.153] — the interval touches zero. An earlier draft of this project told a story about beta being structurally weakest; that story was fitted to a pagination artifact, and with complete data the stages are flat. Reported here because the absence is the result.
+
+## What the program should change
+
+Four recommendations, each tied to a row above rather than to a prior.
+
+**0. Act on the pair, not on any single signal.** `gate_unassigned` and `item_silent` together are right about 94% of what they flag, significantly better than either alone, and they flag a short enough list to actually review. Neither signal alone justifies an intervention at that confidence.
+
+**1. Run the approval-gate check six weeks before the freeze, not four.** `gate_unassigned` is the best operational instrument in the set — 40% recall at 74% precision — but at the a priori `M = 4` its median lead is 3.3 weeks, which classifies it as *status*: it tells you about a problem you can no longer fix. The [sensitivity grid](out/k8s/sensitivity.csv) shows that at `M = 6` it reclassifies to *risk* and still scores lift **1.694 [1.567, 1.837]**. This is a one-parameter change that converts the most useful signal from a report into a warning.
+
+**2. Treat total silence as the escalation trigger, not owner silence.** An item nobody has touched in eight weeks slips at 89% precision. Narrowing the same check to the *listed owners* drops it to 70%, because owners delegate and the named author is frequently not the person implementing. Watch the work, not the roster.
+
+**3. Do not let the tracking label lapse — and do not depend on it either.** For three consecutive cycles the `tracked/yes` label was applied to no row at all. The organisation lost its own scope signal and, on this evidence, did not notice. The lesson is two-sided: the lapse is worth fixing, *and* the signals that survived it are the ones that read behaviour rather than bookkeeping.
+
+**4. Stop treating late commitment as a risk.** `late_target` is significantly **negative** at every parameter value tested — work committed close to the freeze slipped *less*. If a process penalises or flags late additions on risk grounds, this corpus says that intuition is backwards, most plausibly because a team committing late commits with better information.
+
+**One thing this cannot tell you.** None of the above is an intervention study. Every number here is observational, and a signal that predicts a slip is not evidence that acting on it prevents one — that requires an experiment, and is confounded even inside a single organisation. Spec §13 ruled it out of scope for exactly this reason.
+
+## What would have made this measurable
+
+The recommendations above are about shipping. This is about **being observable at all** — and it is the part that transfers to another organisation, because almost every limit this project hit was an artifact failure rather than an analysis failure.
+
+Kubernetes is already near the top of the distribution: of 41 surveyed projects, 8 record no retargeting at all, so the question cannot be asked of them. Everything here is a gap in a corpus that is *unusually* good.
+
+| | change | what it would have fixed |
+|---|---|---|
+| **1** | Every implementation PR references its tracking issue | 290 rows (23%) are `unresolved`, and **105 of them self-report delivery** — the work shipped, the trail didn't connect. Coverage would go from 77% to near 90%. One line in a PR template. |
+| **2** | A `depends-on:` field in the proposal metadata | Only 18% of READMEs reference a sibling and none carries a relation type. **H2 has no verdict because of this.** A few lines of schema would make a whole hypothesis testable. |
+| **3** | Record delivery explicitly per stage, at release time | `shipped` was originally a fallthrough — "not observed to slip" — with a provable **8.5% error floor** that understated the signal that worked. Would remove the largest source of label error. |
+| **4** | Don't let the scope label lapse | v1.28–v1.30: `tracked/yes` applied to **no row at all**. The organisation lost its own scope signal for three cycles and did not notice. |
+| **5** | Resolvable actor identity across git and the issue tracker | Git emails don't map to GitHub handles, so for two sprints the signal could not ask H1's actual question. |
+| **6** | Machine-readable roadmap, in version control, with history | **Kubernetes gets this right**, and it is why any of this was possible: `kep.yaml` in git is what makes `snapshot(as_of)` — and therefore the whole backtest — exist. Most projects surveyed cannot do this. |
+
+**The honest caveat.** Every item would have made the *measurement* better. Only #4 has evidence of improving *delivery*, and even that is a signal about slippage rather than a demonstrated cause of it. Nothing here is an intervention study.
+
+The defensible claim is narrower: **an organisation that adopts these conventions can find out whether its delivery risk is predictable. One that does not, cannot** — and 8 of the 41 projects surveyed are in the second category without, as far as anyone can tell, knowing it.
 
 ## What these numbers cannot support
 
 The labeling rule requires positive evidence that code landed — a tracking issue closed in the milestone's window, or a `kubernetes/kubernetes` PR milestoned for that release merged. Rows with neither are `unresolved`: **290 rows, 23% of the corpus**, outcome unknown rather than failed. 105 of them carry a `kep.yaml` self-report claiming delivery, so the residual is work whose paper trail cannot be followed, not simply work that stalled.
 
-Recall is low throughout — the best instrument here flags a sixth of committed work. Most slippage is caught by none of these signals. The freeze evaluation point was chosen after seeing results, so treat specific lift values as suggestive. And this is one corpus: Kubernetes has unusually strong process hygiene, which makes it the best case for this method rather than a typical one.
+Recall is low throughout — the best instrument here flags a sixth of committed work. Most slippage is caught by none of these signals. The freeze evaluation point was chosen after seeing results, so treat specific lift values as suggestive. The 180-day censoring cutoff is a judgment that moves magnitudes but no directions. And this is one corpus: Kubernetes has unusually strong process hygiene, which makes it the best case for this method rather than a typical one — how unusual is measured below, not asserted.
 
 **No learned model was tested. That was a design decision, not an omission — see the next section.**
 
-[`docs/findings.md`](docs/findings.md) states all of this in full, along with the four errors this project made and corrected — including a fetch bug that meant an earlier draft published conclusions drawn from 6% of the available data.
+[`docs/findings.md`](docs/findings.md) states all of this in full, along with the six errors this project made and corrected — including a fetch bug that meant an earlier draft published conclusions drawn from 6% of the available data.
+
+## Why there is no second corpus
+
+"One corpus, one organisation" is this project's largest limitation. Before writing a second adapter, **41 candidate GitHub projects were measured** against what the pipeline actually needs ([`out/corpus_survey.csv`](out/corpus_survey.csv)), with `kubernetes/enhancements` included as a reference row so candidates are read against the corpus known to work.
+
+The decisive property is **retargeting**: a `slipped` outcome exists only because work is moved from one release to a later one and leaves a timestamped trace. Everything else degrades; this disqualifies.
+
+| | of 41 |
+|---|---|
+| show no retargeting at all — no positive class to predict | **8** |
+| have no milestoned issues at all | 6 |
+| have no team/area labels, so two signals cannot run | 13 |
+| have no scope-decision label, so **the control cannot be reproduced** | 22 |
+| clear all four criteria | **4** |
+
+The four that clear it are `kubernetes/enhancements` itself, `knative/serving`, `etcd-io/etcd` and `argoproj/argo-cd` — **every non-reference pass is a Kubernetes-ecosystem project that adopted the KEP process.** Outside Kubernetes, the artifacts this method needs exist mainly where someone copied Kubernetes.
+
+`golang/go` was the strongest candidate on every other axis — 51,219 milestoned issues, 79% coverage, 42% retargeting, and governance genuinely unlike Kubernetes'. It was still declined, because it cannot reproduce the control: its release-process labels are far too rare (281 issues against 51k), and its `Backlog` and `Unplanned` milestones (10,304 issues) are **circular** — in Go, "the team deprioritised this" and "the work slipped" are the same event. In Kubernetes they are two different artifacts, which is what makes the control a control.
+
+**What this establishes and what it does not.** It establishes that the *inputs* are rare. It does not establish that the *signals* would fail elsewhere — that question is untouched, and every result here remains one organisation's. But it turns the limitation from an apology into a measurement, and it offers a reader something a second corpus would not: before adopting any of this, check whether your own corpus retargets in a way anyone could observe.
 
 ## Why there is no model
 
@@ -112,7 +250,13 @@ LLMs *were* in scope, for a different job. The spec defines `source = llm`, a co
 field on LLM-sourced events, and an SHA-256-keyed LLM cache committed to the repo so
 results reproduce. Their role was **extraction, not prediction**: read unstructured KEP
 prose and emit typed `dependency_changed` events, so that deterministic signals could run
-over a richer event stream. That was sprint 3, and it was never reached.
+over a richer event stream. **Sprint 3 built it**, and measured its ceiling.
+
+The extraction path is no longer hypothetical: it found **27 dependency edges across 617
+READMEs**, because only 18% of them reference a sibling KEP at all and most of those are
+citations rather than dependencies. A model would separate "depends on" from "related to"
+better than the regexes do — a real gain inside that 18%, and no way past it. The path was
+worth building and it is coverage-bound, not technique-bound.
 
 Prediction by model was ruled out in writing before any code existed:
 
@@ -121,13 +265,14 @@ Prediction by model was ruled out in writing before any code existed:
 
 |  | role | status |
 |---|---|---|
-| **LLM as extractor** | "this README says KEP-1234 blocks this one" → a typed event with confidence | in scope, deferred, never built |
+| **LLM as extractor** | "this README says KEP-1234 blocks this one" → a typed event with confidence | **built**, as `prose-cue-v1` — 27 edges across 617 READMEs |
 | **LLM as predictor** | "this KEP looks risky to me" → a score | excluded by design, as uncalibratable |
 
 Running the backtest supplied the evidence for a call the spec had only asserted. **Every
 conclusion in this README was wrong at least once**, and each error was caught by tracing a
 claim to specific rows — 475 timelines truncated at exactly 100 entries, 22 closures
-predating their own cycle, 195 merges attributed by date instead of by milestone. That
+predating their own cycle, 195 merges attributed by date instead of by milestone, an id
+namespace mismatch that would have made an owner-scoped signal fire on the entire corpus. That
 tracing is possible because a firing means one inspectable fact: *no commit touched this
 directory between these two dates*. A model emits a score, and a wrong score has nothing to
 trace. **And the labels could not support training anyway**: 379 positives over 1,255 rows,
@@ -162,13 +307,37 @@ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 .venv/bin/python cli.py fetch      # clone the source repos (a few minutes)
 .venv/bin/python cli.py build      # events -> SQLite (walks git history; minutes)
 .venv/bin/python cli.py backtest   # -> out/k8s/*.csv (under a second)
+.venv/bin/python cli.py sensitivity # -> the a priori parameter grid
+.venv/bin/python cli.py register --milestone k8s:v1.34   # live view for a cycle
 
-.venv/bin/pytest                   # 188 tests, incl. a conformance run on the real corpus
+.venv/bin/pytest                   # 283 tests, incl. a conformance run on the real corpus
 ```
 
 Requires Python 3.12+. Dependencies are `pyyaml`, `pandas`, `numpy`, `pytest` — nothing else.
 
-Outputs land in [`out/k8s/`](out/k8s/): per-signal metrics and a by-team cut for each of the two cuts (`signals.csv` / `by_org.csv` are evidenced, `*_full.csv` are the full sample), plus `rows.csv` with the row-level detail and every row's label.
+Outputs land in [`out/k8s/`](out/k8s/). For each of the two cuts: per-signal metrics at both evaluation points (`signals.csv`, `signals_at_freeze.csv`, and `*_full*` for the full sample), plus by-org and by-stage breakdowns. `rows.csv` carries row-level detail and every row's label; `sensitivity.csv` carries the a priori parameter grid.
+
+## Adding an adapter
+
+The corpus-specific parts sit behind one interface. A new corpus means writing `adapters/<corpus>/` exposing four functions, and nothing in `core/`, `signals/` or `backtest/` changes:
+
+```python
+fetch(cache_dir)  -> None            # idempotent, incremental, raw only
+milestones()      -> list[Milestone]
+org_units()       -> list[OrgUnit]
+events()          -> Iterable[Event]
+```
+
+plus a `LABELING.md` documenting the outcome rule, and a `config` naming the corpus's required owner roles.
+
+Three rules the shared conformance suite enforces, and one it cannot:
+
+- **`events()` must be deterministic** — two runs over the same cache produce identical output.
+- **Never normalise the raw cache in place.** Layout is `cache/<corpus>/<source>/…`, gitignored except `llm/`, which is committed so the repo reproduces without an API key.
+- **Every event carries a `source`** from the vocabulary in `core/model.py`.
+- **Every event must be timestamped with when the fact became true, not when you read it.** This is the one the suite cannot check for you, and it is the one that matters: a fabricated timestamp produces a pipeline that runs, emits plausible CSVs, and is wrong in a way no internal check can catch. [`docs/adapters/gitlab.md`](docs/adapters/gitlab.md) is a worked example of stopping for exactly this reason.
+
+Run `pytest tests/conformance/` against the new adapter. Six checks; all six are corpus-agnostic.
 
 ## Reading further
 
@@ -178,10 +347,17 @@ Outputs land in [`out/k8s/`](out/k8s/): per-signal metrics and a by-team cut for
 | [`docs/sprint-1-notes.md`](docs/sprint-1-notes.md) | The first run in full: results, per-release histogram, and an extended section on what the numbers cannot support. Its manual audit validated the *sprint-1* labels, which this rule replaced |
 | [`docs/sprint-2-notes.md`](docs/sprint-2-notes.md) | The evidenced labeling rule, both cuts in full, and two corrections that invalidated earlier drafts of these numbers |
 | [`adapters/k8s/LABELING.md`](adapters/k8s/LABELING.md) | The outcome rule, normative — the doc states it, the code implements it, and they are kept in agreement |
+| [`out/corpus_survey.csv`](out/corpus_survey.csv) | 41 candidate corpora measured against what the pipeline needs — the evidence behind not building a second one |
+| [`out/k8s/sensitivity.csv`](out/k8s/sensitivity.csv) | Every conclusion re-run across the a priori parameters — the check that we did not tune toward our own result |
+| [`docs/adapters/gitlab.md`](docs/adapters/gitlab.md) | The second corpus: full mapping, and the credential blocker that stopped it |
 | [`docs/superpowers/specs/`](docs/superpowers/specs/) | Design spec and the amendments execution forced |
 
 ## Status
 
-**Closed.** Sprint 1 built the pipeline and the first three signals. Sprint 2 replaced the fallthrough labeling rule with positive evidence of delivery, added `unresolved` as a first-class label, published both cuts, and built the S0 control that sprint 1 specified and skipped — which is what produced the conclusion above.
+**Complete against the spec.** Every deliverable in `docs/superpowers/specs/2026-08-26-program-risk-backtest-design.md` is built: all ten signals in §7, all four outputs in §8 plus the sensitivity grid and both evaluation points, §9's `register`, §10's eight-section finding, §11's MCP wrapper, and answers to all six of §14's open questions recorded in the spec beside them. 317 tests, six corpus-agnostic conformance checks.
 
-Three items on sprint 1's list are deliberately not done and are recorded as such in [`docs/sprint-2-notes.md`](docs/sprint-2-notes.md) §4: real actors for the activity signal, a sensitivity grid over the a priori parameters, and a decision about right-censoring. [`docs/findings.md`](docs/findings.md) ends with what a continuation should tackle first — the extraction path described above, the five untested signals, and a second corpus.
+Sprint 1 built the pipeline and the first three signals. Sprint 2 replaced the fallthrough labeling rule with positive evidence of delivery and added the S0 control. Sprint 3 built the four remaining signals, gave `activity` real actors so H1 could be tested as stated, added the dependency extraction that answers §14's open question, published the sensitivity grid, the conjunction analysis and the `register` view, made the right-censoring decision sprint 2 left open, and produced verdicts on all three hypotheses.
+
+**Sprint 4's second corpus was scoped, measured and declined.** 41 candidate projects were surveyed against what the pipeline needs; only three non-Kubernetes projects clear the bar and all three copied the KEP process. The strongest candidate by every other measure, `golang/go`, cannot reproduce the control. That measurement is published as a finding in its own right rather than as a caveat.
+
+What a continuation should tackle is at the end of [`docs/findings.md`](docs/findings.md). The honest short version: chase recall, and give the dependency graph a source that types its edges.

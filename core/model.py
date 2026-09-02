@@ -19,7 +19,8 @@ class EventKind:
 
 
 # Adapter-output vocabulary, enforced by the conformance suite rather than by Event.__post_init__
-SOURCES = frozenset({"git-history", "calendar", "exceptions", "derived", "tracking-issue"})
+SOURCES = frozenset({"git-history", "calendar", "exceptions", "derived", "tracking-issue", "llm",
+                     "api", "retro"})
 
 
 def corpus_of(id: str) -> str:

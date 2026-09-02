@@ -8,7 +8,8 @@ from adapters.k8s.config import CONFIG, REPOS
 import json as _json
 
 from adapters.k8s.delivery import load_delivery_evidence
-from adapters.k8s.tracking import label_events
+from adapters.k8s.extract_deps import link_dep_events, prose_dep_events
+from adapters.k8s.tracking import actor_activity_events, label_events
 from adapters.k8s.exceptions import SkippedExceptionsFile, load_exceptions
 from adapters.k8s.fetch import clone_or_update
 from adapters.k8s.git_history import dir_activity, file_versions, list_kep_dirs
@@ -157,6 +158,10 @@ class K8sAdapter:
         if self._base_events is None:
             repo = self.cache / "enhancements"
             out: list[Event] = []
+            # Which issue numbers are KEP tracking issues, so a cross-reference to a
+            # kubernetes/kubernetes PR is not mistaken for a dependency on an enhancement.
+            tracking_numbers = {int(p.stem) for p in (self.cache / "github" / "timeline").glob("*.json")
+                                if p.stem.isdigit()}
             for d, item_id in self._kep_dirs():
                 sig = d.split("/")[1]
                 # PRR files are named after the KEP's *directory* number, not
@@ -167,6 +172,10 @@ class K8sAdapter:
                 out += ev.kep_events(item_id, file_versions(repo, f"{d}/kep.yaml"))
                 out += ev.prr_events(item_id, file_versions(repo, f"keps/prod-readiness/{sig}/{dir_num}.yaml"))
                 out += ev.activity_events(item_id, dir_activity(repo, d))
+                # Dependency edges from README prose (spec §14 q4). Low coverage by
+                # nature -- 18% of READMEs reference any sibling KEP -- and every edge
+                # carries its confidence and extractor.
+                out += prose_dep_events(item_id, file_versions(repo, f"{d}/README.md"))
                 # Tracking-issue labels, timestamped, so snapshot() can replay the
                 # release team's view during the cycle. S0 reads these; without them it
                 # would have to read today's labels, which is the team's final word and
@@ -174,7 +183,15 @@ class K8sAdapter:
                 tp = self.cache / "github" / "timeline" / f"{_kep_number_of(item_id)}.json"
                 if tp.exists():
                     try:
-                        out += label_events(item_id, _json.loads(tp.read_text()))
+                        timeline = _json.loads(tp.read_text())
+                        out += label_events(item_id, timeline)
+                        # Activity with a real actor. Sprint 1's git-derived activity
+                        # carries `k8s:unknown`, which forced S1 to test silence from
+                        # *anyone*; H1 claims something narrower about the listed owners.
+                        # Both streams are kept: they see different work (commits vs
+                        # discussion and linked PRs) and the signals report separately.
+                        out += actor_activity_events(item_id, timeline)
+                        out += link_dep_events(item_id, timeline, tracking_numbers)
                     except (ValueError, OSError):
                         pass
             # known-milestone filter: drops a TARGET_SET (including a clear -- see

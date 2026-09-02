@@ -7,7 +7,11 @@ UTC = timezone.utc
 
 def test_vocabularies_pinned():
     assert EventKind.ALL == {"target_set", "status_changed", "owner_changed", "dependency_changed", "activity", "label_changed", "outcome"}
-    assert SOURCES == {"git-history", "calendar", "exceptions", "derived", "tracking-issue"}
+    # `llm`, `api` and `retro` are spec §3's provenance vocabulary. `llm` is live --
+    # prose-extracted dependency edges carry it -- and the other two are declared so an
+    # adapter emitting them does not have to widen the vocabulary to do so.
+    assert SOURCES == {"git-history", "calendar", "exceptions", "derived", "tracking-issue",
+                       "llm", "api", "retro"}
 
 def test_corpus_of():
     assert corpus_of("k8s:kep-2400") == "k8s"

@@ -74,7 +74,8 @@ def cmd_build(args) -> None:
 
 def cmd_backtest(args) -> None:
     from adapters.k8s.config import CONFIG
-    from backtest.metrics import by_org, rows_frame, signal_metrics
+    from backtest.conjunctions import conjunction_metrics
+    from backtest.metrics import CENSOR_DAYS, by_org, by_stage, rows_frame, signal_metrics, uncensored_milestones
     from backtest.run import run_backtest
     from core.store import Store
     from signals import SIGNALS
@@ -85,6 +86,16 @@ def cmd_backtest(args) -> None:
         ms = [m for m in ms if m.ordinal >= args.min_minor or not m.is_scheduled]
     rows = run_backtest(evs, ms, orgs, CONFIG, SIGNALS, dict(DEFAULT_PARAMS))
     out = OUT / "k8s"; out.mkdir(parents=True, exist_ok=True)
+    # Right-censoring: milestones released too recently for their slips to have surfaced.
+    # Their rows deflate the base rate, which inflates every lift measured against it.
+    open_ids = {m.id for m in ms} - {m.id for m in uncensored_milestones(ms, days=args.censor_days)}
+    censored = [r for r in rows if r.milestone_id not in open_ids]
+    # Count only milestones that actually carry rows: the calendar holds v1.38-v1.60
+    # placeholders with no release date, which are "open" but empty and would inflate this.
+    dropped_ms = sorted({r.milestone_id for r in rows} & open_ids)
+    if dropped_ms:
+        print(f"censoring: {len(rows) - len(censored)} rows dropped from the uncensored view "
+              f"({', '.join(dropped_ms)} released < {args.censor_days} days ago)")
     by_id = {m.id: m for m in ms}
     rows_frame(rows).to_csv(out / "rows.csv", index=False)
 
@@ -92,14 +103,103 @@ def cmd_backtest(args) -> None:
     dist = collections.Counter(r.outcome for r in rows)
     print(f"{len(rows)} rows | " + " ".join(f"{k}={v}" for k, v in sorted(dist.items(), key=lambda x: -x[1])))
 
-    for cut, sig_name, org_name in (("evidenced", "signals.csv", "by_org.csv"),
-                                    ("full", "signals_full.csv", "by_org_full.csv")):
+    for cut, sig_name, org_name, stage_name in (
+            ("evidenced", "signals.csv", "by_org.csv", "by_stage.csv"),
+            ("full", "signals_full.csv", "by_org_full.csv", "by_stage_full.csv")):
         table = signal_metrics(rows, by_id, L=DEFAULT_PARAMS["L"], cut=cut)
         table.to_csv(out / sig_name, index=False)
+        # The decision-point view, published beside the designed metric rather than
+        # instead of it. findings.md's headline is a freeze-point number; before this it
+        # came from an uncommitted one-off computation and could not be reproduced.
+        freeze = signal_metrics(rows, by_id, L=DEFAULT_PARAMS["L"], cut=cut, evaluation="at_freeze")
+        freeze.to_csv(out / sig_name.replace(".csv", "_at_freeze.csv"), index=False)
+        # Same tables with the censored tail removed. Smaller sample, unbiased denominator.
+        signal_metrics(censored, by_id, L=DEFAULT_PARAMS["L"], cut=cut).to_csv(
+            out / sig_name.replace(".csv", "_uncensored.csv"), index=False)
+        signal_metrics(censored, by_id, L=DEFAULT_PARAMS["L"], cut=cut, evaluation="at_freeze").to_csv(
+            out / sig_name.replace(".csv", "_at_freeze_uncensored.csv"), index=False)
         by_org(rows, cut=cut).to_csv(out / org_name, index=False)
-        print(f"\n--- {cut} cut ---")
+        stages = by_stage(rows, cut=cut)
+        stages.to_csv(out / stage_name, index=False)
+        # Signals in combination. Restricted to the four that clear the control alone:
+        # pairing null signals produces noise with a precision attached.
+        conj = conjunction_metrics(censored, ["item_silent", "gate_unassigned", "hollow_owner",
+                                              "process_tracked"], by_id, cut=cut, max_size=3)
+        conj.to_csv(out / sig_name.replace(".csv", "_conjunctions.csv"), index=False)
+        print(f"\n--- {cut} cut, first-fired ---")
         print(table.to_string(index=False, float_format=lambda x: f"{x:.3f}"))
+        print(f"\n--- {cut} cut, at freeze ---")
+        cols = ["signal", "fired", "precision", "recall", "lift", "lift_ci_lo", "lift_ci_hi"]
+        print(freeze[cols].to_string(index=False, float_format=lambda x: f"{x:.3f}"))
+        print(stages.to_string(index=False, float_format=lambda x: f"{x:.3f}"))
+        print(f"\n--- {cut} cut, conjunctions (uncensored) ---")
+        print(conj[["signals", "fired", "fired_pct", "precision", "recall", "lift",
+                    "lift_ci_lo", "lift_ci_hi", "jaccard", "subset"]]
+              .to_string(index=False, float_format=lambda x: f"{x:.3f}"))
 
+
+
+def cmd_register(args) -> None:
+    """Spec §9: every signal on snapshot(now), split by measured lead class."""
+    from datetime import datetime, timezone
+    import pandas as pd
+    from adapters.k8s.config import CONFIG
+    from backtest.register import build_register, format_register
+    from core.replay import snapshot
+    from core.store import Store
+    from signals import SIGNALS
+    from signals.base import Context, DEFAULT_PARAMS, targets_at
+    metrics_path = OUT / "k8s" / ("signals.csv" if args.cut == "evidenced" else "signals_full.csv")
+    if not metrics_path.exists():
+        raise SystemExit(f"no backtest for this corpus: {metrics_path} is missing. Run `backtest` first.")
+    s = Store(CACHE / "store.sqlite")
+    ms, orgs, evs = s.load_milestones("k8s"), s.load_org_units("k8s"), s.load_events("k8s")
+    by_id = {m.id: m for m in ms}
+    m = by_id.get(args.milestone)
+    if m is None:
+        raise SystemExit(f"unknown milestone {args.milestone!r}")
+    now = datetime.now(timezone.utc)
+    states = snapshot(evs, now)
+    # Same calendar-visibility filter as the backtest: a live signal must not read a
+    # later milestone's dates either.
+    visible = {mid: x for mid, x in by_id.items() if x.ordinal <= m.ordinal}
+    ctx = Context(now, m, visible, orgs, CONFIG, dict(DEFAULT_PARAMS),
+                  [e for e in evs if e.kind == "outcome" and e.ts <= now])
+    firing: dict[tuple[str, str], list[str]] = {}
+    for iid, st in states.items():
+        for stage in targets_at(st, m.id):
+            firing[(iid, stage)] = []
+    for name, fn in SIGNALS.items():
+        for key in fn(states, ctx):
+            if key in firing:
+                firing[key].append(name)
+    print(format_register(build_register(firing, pd.read_csv(metrics_path), m, cut=args.cut), m, cut=args.cut))
+
+
+def cmd_sensitivity(args) -> None:
+    """Spec §8's grid: vary each a priori parameter, report, do not tune on it."""
+    from adapters.k8s.config import CONFIG
+    from backtest.run import run_backtest
+    from backtest.sensitivity import DEFAULT_GRID, sweep
+    from core.store import Store
+    from signals import SIGNALS
+    from signals.base import DEFAULT_PARAMS
+    s = Store(CACHE / "store.sqlite")
+    ms, orgs, evs = s.load_milestones("k8s"), s.load_org_units("k8s"), s.load_events("k8s")
+    if args.min_minor:
+        ms = [m for m in ms if m.ordinal >= args.min_minor or not m.is_scheduled]
+    by_id = {m.id: m for m in ms}
+    runner = lambda params: run_backtest(evs, ms, orgs, CONFIG, SIGNALS, params)
+    out = OUT / "k8s"; out.mkdir(parents=True, exist_ok=True)
+    frames = []
+    for cut in ("evidenced", "full"):
+        df = sweep(runner, by_id, dict(DEFAULT_PARAMS), DEFAULT_GRID, cut=cut)
+        frames.append(df)
+        print(f"\n--- {cut} cut ---")
+        print(df.to_string(index=False, float_format=lambda x: f"{x:.3f}"))
+    import pandas as pd
+    pd.concat(frames).to_csv(out / "sensitivity.csv", index=False)
+    print(f"\nwrote {out / 'sensitivity.csv'}")
 
 
 def cmd_fetch_issues(args) -> None:
@@ -160,7 +260,17 @@ def main(argv=None) -> None:
     fi.add_argument("--reserve", type=int, default=50, help="stop with this much budget left")
     fi.add_argument("--allow-unauthenticated", action="store_true")
     fi.set_defaults(fn=cmd_fetch_issues)
+    rp = sub.add_parser("register")
+    rp.add_argument("--milestone", required=True, help="milestone id, e.g. k8s:v1.34")
+    rp.add_argument("--cut", default="evidenced", choices=("evidenced", "full"))
+    rp.set_defaults(fn=cmd_register)
+    sp = sub.add_parser("sensitivity")
+    sp.add_argument("--min-minor", type=int, default=0)
+    sp.set_defaults(fn=cmd_sensitivity)
     bp = sub.add_parser("backtest")
+    bp.add_argument("--censor-days", type=int, default=180,
+                    help="exclude milestones released fewer than this many days ago from the "
+                         "uncensored tables (default 180, ~1.5 release cycles)")
     # Default 0 = every scheduled milestone (v1.19-v1.37), which is what the committed
     # out/k8s/*.csv were produced from -- a bare `cli.py backtest` must reproduce them.
     # `--min-minor N` is the opt-in "recent cycles only" cut (see docs/sprint-1-notes.md).

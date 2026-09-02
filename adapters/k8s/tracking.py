@@ -76,6 +76,76 @@ def parse_timeline(events) -> list[LabelEvent]:
     return sorted(out, key=lambda e: (e.ts, e.label, e.op))
 
 
+# Timeline entry types that mean a person acted on the work, as against types that
+# record process bookkeeping or a notification preference.
+#
+# Included: `commented` (discussion), `cross-referenced` (a PR or issue was linked here
+# by this person), `referenced` (a commit referenced the issue), and the state changes a
+# maintainer performs deliberately.
+#
+# Excluded, and each for a reason: `labeled`/`unlabeled`/`milestoned`/`demilestoned` are
+# the release team's housekeeping -- counting them would let a bot's weekly sweep make an
+# abandoned enhancement look alive, which is precisely the failure S1 exists to catch.
+# `mentioned` records that someone was named *by another person*, so it is not an action
+# by its actor. `subscribed` is a notification setting. `project_v2_*` is board automation.
+ACTIVITY_EVENTS = frozenset({
+    "commented", "cross-referenced", "referenced", "committed",
+    "assigned", "unassigned", "closed", "reopened", "review_requested",
+})
+
+_BOT_SUFFIXES = ("-bot", "-robot", "[bot]")
+
+
+def actor_id(login: str) -> str:
+    """Namespace a GitHub login the same way `events.person_id` namespaces a kep.yaml
+    handle -- including the leading `@`, which kep.yaml carries and the API does not.
+
+    This is load-bearing and was wrong once. Owner ids are stored as `k8s:@alice`; the
+    timeline gives `alice`. Emitting `k8s:alice` here would match no owner at all, so an
+    owner-scoped silence signal would find every item silent and fire on the whole
+    corpus -- scoring well for precisely the wrong reason. `test_actor_id_matches_person_id`
+    pins the two together.
+    """
+    handle = login.lstrip("@").lower()
+    return "k8s:@" + handle
+
+
+def _is_bot(login: str) -> bool:
+    low = login.lower()
+    return low.endswith(_BOT_SUFFIXES) or low in {"k8s-ci-robot", "fejta-bot"}
+
+
+def actor_activity_events(item_id: str, timeline) -> list["Event"]:
+    """Timeline entries as `activity` events carrying the **real** actor.
+
+    Sprint 1's activity came from git commits, whose author emails do not map to GitHub
+    handles reliably, so every event carried `actor_id = k8s:unknown`. That forced S1 to
+    test "silence from anyone", while H1 claims something narrower: that items whose
+    *listed owners* go quiet slip more often. These events are what make the stated
+    hypothesis testable -- the tracking issue's participants are GitHub logins, the same
+    namespace `kep.yaml` names its authors and approvers in.
+
+    Bots are emitted, not dropped, but marked `bot: True`. Dropping them here would
+    silently redefine `activity` for every consumer; marking them lets each signal decide,
+    and keeps the decision visible in the event stream.
+    """
+    from core.model import Event, EventKind as K
+    out = []
+    for e in timeline or []:
+        if not isinstance(e, dict) or e.get("event") not in ACTIVITY_EVENTS:
+            continue
+        ts = _ts(e.get("created_at"))
+        who = e.get("actor") or e.get("user")
+        login = who.get("login") if isinstance(who, dict) else None
+        if ts is None or not login:
+            continue
+        out.append(Event(ts, item_id, K.ACTIVITY,
+                         {"actor_id": actor_id(str(login)), "kind": str(e["event"]),
+                          "bot": _is_bot(str(login))},
+                         "tracking-issue"))
+    return sorted(out, key=lambda x: (x.ts, x.payload["actor_id"], x.payload["kind"]))
+
+
 def labels_at(events: list[LabelEvent], as_of: datetime) -> set[str]:
     """Labels in force at `as_of`. Inclusive of events exactly at `as_of`, matching
     `core.replay.snapshot()`."""
