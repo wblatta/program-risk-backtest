@@ -106,6 +106,43 @@ def cmd_backtest(args) -> None:
 
 
 
+def cmd_register(args) -> None:
+    """Spec §9: every signal on snapshot(now), split by measured lead class."""
+    from datetime import datetime, timezone
+    import pandas as pd
+    from adapters.k8s.config import CONFIG
+    from backtest.register import build_register, format_register
+    from core.replay import snapshot
+    from core.store import Store
+    from signals import SIGNALS
+    from signals.base import Context, DEFAULT_PARAMS, targets_at
+    metrics_path = OUT / "k8s" / ("signals.csv" if args.cut == "evidenced" else "signals_full.csv")
+    if not metrics_path.exists():
+        raise SystemExit(f"no backtest for this corpus: {metrics_path} is missing. Run `backtest` first.")
+    s = Store(CACHE / "store.sqlite")
+    ms, orgs, evs = s.load_milestones("k8s"), s.load_org_units("k8s"), s.load_events("k8s")
+    by_id = {m.id: m for m in ms}
+    m = by_id.get(args.milestone)
+    if m is None:
+        raise SystemExit(f"unknown milestone {args.milestone!r}")
+    now = datetime.now(timezone.utc)
+    states = snapshot(evs, now)
+    # Same calendar-visibility filter as the backtest: a live signal must not read a
+    # later milestone's dates either.
+    visible = {mid: x for mid, x in by_id.items() if x.ordinal <= m.ordinal}
+    ctx = Context(now, m, visible, orgs, CONFIG, dict(DEFAULT_PARAMS),
+                  [e for e in evs if e.kind == "outcome" and e.ts <= now])
+    firing: dict[tuple[str, str], list[str]] = {}
+    for iid, st in states.items():
+        for stage in targets_at(st, m.id):
+            firing[(iid, stage)] = []
+    for name, fn in SIGNALS.items():
+        for key in fn(states, ctx):
+            if key in firing:
+                firing[key].append(name)
+    print(format_register(build_register(firing, pd.read_csv(metrics_path), m, cut=args.cut), m, cut=args.cut))
+
+
 def cmd_sensitivity(args) -> None:
     """Spec §8's grid: vary each a priori parameter, report, do not tune on it."""
     from adapters.k8s.config import CONFIG
@@ -190,6 +227,10 @@ def main(argv=None) -> None:
     fi.add_argument("--reserve", type=int, default=50, help="stop with this much budget left")
     fi.add_argument("--allow-unauthenticated", action="store_true")
     fi.set_defaults(fn=cmd_fetch_issues)
+    rp = sub.add_parser("register")
+    rp.add_argument("--milestone", required=True, help="milestone id, e.g. k8s:v1.34")
+    rp.add_argument("--cut", default="evidenced", choices=("evidenced", "full"))
+    rp.set_defaults(fn=cmd_register)
     sp = sub.add_parser("sensitivity")
     sp.add_argument("--min-minor", type=int, default=0)
     sp.set_defaults(fn=cmd_sensitivity)
