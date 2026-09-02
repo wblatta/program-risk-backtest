@@ -84,6 +84,11 @@ from 1.002 to 0.997 and now includes 1.0. Sprint 1 already reported it as failin
 censoring cut (0.985) and described it as marginal; it now fails on both. Read as: there
 is no sample in which `prior_slip` is distinguishable from no effect.
 
+> **Superseded by §3.** That last sentence was true of every sample that existed when it
+> was written, and false once outcomes were evidenced: on the evidenced cut `prior_slip`
+> lifts 1.176 with a CI of [1.084, 1.282], clear of 1.0. The tables in this section are
+> the full cut and remain correct as such.
+
 **`late_target` is unchanged in substance** — still negatively predictive, entire CI
 below 1.0 across 772 firings.
 
@@ -229,3 +234,230 @@ retreats from it. Nothing has been implemented; the labeling rule is unchanged.
 2. Widen `Signal` to `(item_id, stage)` — **done**, §1.
 3. Land the tracking-issue API data — **done**, this section. The data is fetched, parsed,
    and characterised; what it cannot do is now measured rather than assumed.
+
+---
+
+## 3. Evidenced outcomes
+
+`shipped` was the fallthrough. Sprint 1's rule checked for a retarget, a drop, and an
+exception, and if none of them matched it called the row `shipped` — so the label meant
+"not observed to slip", not "verified shipped". Sprint 1 measured a floor of 69 of 811
+`shipped` rows that could be shown wrong from the corpus itself, and every error in the
+ten-row manual audit ran the same direction. A label that is assigned by exhaustion
+absorbs every gap in the instrument as a success.
+
+Rules 5 and 6 in [`LABELING.md`](../adapters/k8s/LABELING.md) now read the other way:
+
+5. **shipped** — positive evidence the code landed for this milestone: the tracking issue
+   closed between cycle start and 90 days after release, **or** a `kubernetes/kubernetes`
+   PR cross-referenced from that issue merged between cycle start and release. The
+   evidence kind is written to the outcome event's `evidence` key, so every `shipped` row
+   can name why.
+6. **unresolved** — nothing matched and no delivery evidence exists.
+
+`unresolved` is the new label and the whole design turns on what it means: **unknown to
+this instrument, not failed.** The usual cause is that nobody linked the implementation
+back to the tracking issue. `POSITIVE` stays `{slipped, dropped, exception_denied}`;
+`unresolved` is neither positive nor negative, which is why the results below are
+published under two cuts rather than one.
+
+### `tracked/yes` was rejected as evidence
+
+§2 measured the candidate evidence sources and the obvious one lost. The release team's
+`tracked/yes` label appears on **51.8% of shipped rows and 40.0% of slipped ones**. It
+records that the release team was *tracking* the work for a release, and it is not removed
+when the work fails. Gating `shipped` on it would have admitted 40% of the failures — the
+same fallthrough it was meant to replace, wearing a label that looks like evidence. Issue
+closure separates the classes (21.6% vs 0.8%) and is what rule 5 uses, alongside merges.
+
+### The label distribution
+
+1,255 rows, before and after:
+
+| label | v1 rule | evidenced rule |
+|---|---|---|
+| `shipped` | 811 | **330** |
+| `unresolved` | — | **481** |
+| `slipped` | 370 | 370 |
+| `exception_granted` | 65 | 65 |
+| `dropped` | 9 | 9 |
+
+The three unchanged labels are the check that precedence was not disturbed. Evidence is
+consulted only in the rule-5/6 branch, after rules 1–4 have had their say, so `slipped`,
+`exception_granted` and `dropped` come out byte-identical to the pre-change baseline. If
+they had moved, the reversal would have been rewriting outcomes it was not supposed to
+touch.
+
+### Coverage, and where it is thin
+
+Evidence exists for **40.7% of the rows v1 called `shipped` (330/811)** and for **7.0% of
+the rows it called `slipped` (26/370)** — the asymmetry is the point, since evidence is
+supposed to be rare on rows that did not deliver.
+
+By stage, against v1's `shipped` rows:
+
+| stage | evidence | share |
+|---|---|---|
+| `alpha` | 123 / 257 | 47.9% |
+| `beta` | 49 / 261 | **18.8%** |
+| `stable` | 154 / 284 | 54.2% |
+
+`beta` is weakest by a wide margin, and the mechanism is structural: a tracking issue
+closes once, at the end of a KEP's life, so closure is evidence about the final stage;
+cross-referenced merges cluster on the first. `beta` is in the middle and gets neither.
+212 of 417 `beta` rows are now `unresolved`, so **the evidenced cut under-represents `beta`
+and any per-stage reading has to say so.**
+
+### Two cuts, and the denominators that separate them
+
+- **evidenced** — 774 rows, `unresolved` excluded. Base rate **0.490**.
+- **full** — all 1,255 rows, `unresolved` counted as non-positive. Base rate **0.302**.
+
+Bootstrap CIs, n=1000, seed=0.
+
+**evidenced cut** (n=774, base 0.490):
+
+| signal | fired | precision | recall | lift | 95% CI | median lead | IQR |
+|---|---|---|---|---|---|---|---|
+| `hollow_owner` | 304 | 0.681 | 0.546 | **1.391** | 1.304 – 1.494 | 8.4 wks | 5.3 – 10.3 |
+| `prior_slip` | 276 | 0.576 | 0.420 | **1.176** | 1.084 – 1.282 | 7.3 wks | 5.3 – 9.3 |
+| `late_target` | 482 | 0.396 | 0.504 | **0.809** | 0.752 – 0.864 | 4.6 wks | 4.3 – 6.3 |
+
+**full cut** (n=1,255, base 0.302):
+
+| signal | fired | precision | recall | lift | 95% CI | median lead | IQR |
+|---|---|---|---|---|---|---|---|
+| `hollow_owner` | 505 | 0.410 | 0.546 | **1.357** | 1.253 – 1.463 | 8.6 wks | 4.3 – 9.6 |
+| `prior_slip` | 482 | 0.330 | 0.420 | **1.092** | 0.997 – 1.206 | 7.3 wks | 5.3 – 9.3 |
+| `late_target` | 772 | 0.247 | 0.504 | **0.819** | 0.748 – 0.883 | 5.3 wks | 4.3 – 6.3 |
+
+The full-cut table is identical to §1's, to every digit, and that is a check rather than a
+coincidence: `shipped` and `unresolved` are both non-positive, so relabelling 481 rows from
+one to the other cannot move a metric computed over all 1,255. Any difference would have
+meant the reversal had disturbed the positive set.
+
+**Read the lift columns across the cuts and nothing else.** The 481 rows dropped from the
+evidenced cut were overwhelmingly shipped-side, so removing them lifts the base rate from
+0.302 to 0.490 — nearly half of what remains is a positive. Lift is normalised by base
+rate, so it is comparable. **Precision is not**: `hollow_owner` reads 0.410 against 0.681
+between the tables and its behaviour did not change; the population it is being scored
+against did. Recall happens to be identical in both tables, and for the same reason —
+every excluded row was a non-positive, so the positive set is the same set either way.
+A reader who assumes the two tables describe the same 1,255 rows will misread the
+precision column badly.
+
+### The finding: `prior_slip` crosses the boundary
+
+**Under the evidenced cut `prior_slip`'s CI is [1.084, 1.282] — clear of 1.0. Under the
+full cut it is [0.997, 1.206] — it includes 1.0.** Same signal, the same firings on the rows the
+two cuts share, opposite verdicts on significance.
+
+Where a paper trail exists, "it slipped before" predicts. Where it does not, the signal is
+indistinguishable from noise. This is the clearest statement of what the two cuts are for,
+and it is also a warning about what a single number would have hidden: sprint 1 and §1 of
+this file both reported `prior_slip` as failing, and that finding was true only of a
+sample in which 38% of the rows had no verified outcome at all.
+
+What it does **not** establish is that `prior_slip` predicts slippage in general. The
+evidenced cut is not a random subsample — it is the subsample where somebody linked the
+work back to its tracking issue, which is itself a hygiene property — and hygiene is not
+independent of delivery. The honest statement is narrower than the
+significance test: on rows with verified outcomes, `prior_slip` clears 1.0; on the full
+sample it does not; and the two populations differ in a way that is plausibly related to
+the outcome.
+
+**`hollow_owner` holds up under both** — 1.391 [1.304, 1.494] evidenced, 1.357 [1.253,
+1.463] full, CIs clear of 1.0 in both, median lead 8.4 and 8.6 weeks. It is the one signal
+whose reading does not depend on which cut you are looking at.
+
+**`late_target` is backwards under both** — 0.809 [0.752, 0.864] and 0.819 [0.748, 0.883],
+entire CI below 1.0 either way. Requiring evidence moved it slightly further below
+1.0 rather than toward it; its median lead in the evidenced cut is 4.6 weeks against 5.3
+in the full. Nothing
+here rescues it.
+
+### The 69-row floor: 60 fixed, nine standing
+
+Spec §7's third success criterion was that the sprint-1 known-error rows come out
+`unresolved`. Re-running that criterion against the new labels:
+
+```
+known-wrong rows, by new label: {'unresolved': 60, 'slipped': 4, 'shipped': 9, 'dropped': 1}
+```
+
+**60 became `unresolved`. Nine are still `shipped`.** (The predicate matches 74 rows on the
+current corpus checkout rather than sprint 1's 69; the count drifts with the
+`cache/k8s/enhancements` HEAD it is evaluated against, which is part of why it was only
+ever a bound.)
+
+The nine, each with a `latest-milestone` one to three minors behind the row it claims:
+
+| kep | status | latest-milestone | row | evidence |
+|---|---|---|---|---|
+| `1451-multi-scheduling-profiles` | implementable | v1.19 | stable @ v1.22 | closure |
+| `1867-disable-accelerator-usage-metrics` | implementable | v1.20 | stable @ v1.22 | merge |
+| `2891-simplified-config` | implementable | v1.23 | beta @ v1.24 | closure |
+| `3000-artifact-distribution` | provisional | v1.24 | alpha @ v1.25 | closure |
+| `3130-kms-observability` | replaced | v1.24 | stable @ v1.26 | closure |
+| `3498-extending-stability` | implementable | v1.27 | stable @ v1.28 | closure |
+| `4176-cpumanager-spread-cpus-preferred-policy` | implementable | v1.30 | beta @ v1.31 | merge |
+| `4358-custom-resource-field-selectors` | implementable | v1.31 | stable @ v1.32 | closure |
+| `2902-cpumanager-distribute-cpus-policy-option` | implementable | v1.33 | stable @ v1.35 | closure |
+
+**These stand, and the reason is worth stating rather than burying.** The sprint-1
+criterion was always a heuristic *bound*, not ground truth. What it actually asserts is
+"the KEP never claims to have got there" — which is evidence of non-delivery only if the
+author kept `latest-milestone` current. An unmaintained field sitting next to a closed
+tracking issue reads better as *delivered with poor hygiene* than as *not delivered*, and
+poor hygiene alongside real delivery is precisely the phenomenon this project exists to
+measure. Two imperfect sources disagree on 9 of 1,255 rows; the disagreement is
+informative and adjusting the rule to make it go away would have destroyed the
+information.
+
+Seven of the nine rest on closure, which is the weaker of the two evidence kinds — an
+issue closes once and the window decides which milestone gets credit. If the nine are
+wrong, that is where the error lives.
+
+One row deserves a line of its own: **`3130-kms-observability` carries status `replaced`,
+a drop status, and still labels `shipped`.** Rule 2's drop window closed before the status
+changed, so rule 2 never saw it and precedence carried through to rule 5, which found
+closure evidence. The label is what the rule says; the rule's window is the thing to argue
+with.
+
+### What this still does not fix
+
+From spec §6, unchanged by anything above:
+
+- **Coverage is capped by the source.** Only **306 of 644 KEPs** have any merged
+  cross-referenced PR at all. A KEP whose implementation never referenced its tracking
+  issue is invisible to the merge rule no matter how the window is tuned.
+- **`beta` coverage is 18.8%**, the weakest of the three stages, so `beta` rows are
+  disproportionately `unresolved` and disproportionately absent from the evidenced cut.
+- **Closure's window is a heuristic.** An issue closes once, at the end of a KEP's life.
+  Attributing that to a specific milestone uses a window bounded below by cycle start and
+  above by release + 90 days; the upper bound is a judgement call. The lower bound is not
+  optional — without it, 22 rows took closure that predated their cycle by up to sixteen
+  months as evidence of delivery within it.
+- **A merged PR proves code landed, not that the feature shipped.** Reverts, feature gates
+  left off, and partial implementations are all invisible to it.
+
+- **The ten-row manual audit has not been re-run.** Spec §7's fourth success criterion
+  asks for it, and it is the only check here that is not self-referential — every other
+  check in this section compares one derived artefact against another. It is outstanding.
+
+`unresolved` at 481 rows is 38% of the corpus. That is the honest size of what this
+instrument cannot see, and it is now visible in the output instead of being folded into
+`shipped`.
+
+### Status of sprint 1's P0 list
+
+1. Reverse the labeling precedence — **done, this section.** `shipped` requires positive
+   delivery evidence; rows with none are `unresolved`; both cuts are published from one
+   run.
+2. Widen `Signal` to `(item_id, stage)` — **done**, §1.
+3. Land the tracking-issue API data — **done**, §2.
+
+Spec §5's S8 `broken_trail` is deliberately not in this sprint. It needs point-in-time
+tracking labels inside `snapshot()`, which is the only part of the design that touches the
+core model, and it needs these evidence-backed labels in order to be measured without
+circularity. It gets its own plan.
