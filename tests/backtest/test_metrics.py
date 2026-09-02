@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 from backtest.run import Row
-from backtest.metrics import signal_metrics, by_org, rows_frame
+from backtest.metrics import signal_metrics, by_org, by_stage, rows_frame
 from core.model import Milestone
 
 UTC = timezone.utc
@@ -81,3 +81,27 @@ def test_by_org_respects_cut():
     full = by_org(rows, cut="full").set_index("org_id")
     assert full.loc["x:o1", "rows"] == 2 and full.loc["x:o1", "slips"] == 1 and full.loc["x:o1", "slip_rate"] == 0.5
     assert full["cut"].iloc[0] == "full"
+
+
+# --- by_stage (spec §8: "Cuts: by org unit, by stage, S0 vs each signal") ---
+
+def test_by_stage_counts():
+    """Stage is the axis spec §8 names alongside org, and the one the labeling design
+    predicted would differ (closure evidence is weighted toward a KEP's final stage)."""
+    df = by_stage(rows()).set_index("stage")
+    assert df.loc["alpha", "rows"] == 3 and df.loc["alpha", "slips"] == 2
+    assert df.loc["alpha", "slip_rate"] == 2 / 3
+    assert df.loc["beta", "rows"] == 1 and df.loc["beta", "slip_rate"] == 0.0
+
+def test_by_stage_labels_its_cut():
+    """Every table states its cut. A number that does not say which cut it is, is a defect."""
+    assert by_stage(rows(), cut="full")["cut"].unique().tolist() == ["full"]
+
+def test_by_stage_excludes_unlabeled_rows():
+    """A row with outcome None is held-out, not a negative -- it must not dilute the rate."""
+    rs = rows() + [Row("x:e", "alpha", M.id, "x:o1", None, {"good": None, "bad": None})]
+    assert by_stage(rs).set_index("stage").loc["alpha", "rows"] == 3
+
+def test_by_stage_empty_input_keeps_schema():
+    df = by_stage([])
+    assert list(df.columns) == ["cut", "stage", "rows", "slips", "slip_rate"]

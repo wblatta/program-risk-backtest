@@ -75,16 +75,49 @@ def signal_metrics(rows: list[Row], milestones_by_id: dict[str, Milestone], L: i
     return df
 
 
-def by_org(rows: list[Row], cut: str = "evidenced") -> pd.DataFrame:
-    rows = _apply_cut(rows, cut)
-    df = rows_frame([r for r in rows if r.outcome is not None])
+# Lifecycle order, not alphabetical: alphabetising interleaves the pipeline
+# (`deprecated` and `disabled` sort between `beta` and `stable`), which makes a
+# stage table read as noise. Unknown stages sort after these, alphabetically, so a
+# corpus with a different vocabulary still produces a stable ordering.
+STAGE_ORDER = ("alpha", "beta", "stable", "deprecated", "removed", "disabled")
+
+
+def _rate_by(rows: list[Row], column: str, cut: str, order=None) -> pd.DataFrame:
+    """Slip rate grouped by one row attribute. Backs both published cuts (spec §8).
+
+    Rows with `outcome is None` are held out by the backtest, not observed negatives,
+    and are excluded before any rate is taken -- counting them would dilute every
+    group toward zero.
+    """
+    kept = [r for r in _apply_cut(rows, cut) if r.outcome is not None]
+    df = rows_frame(kept)
     if df.empty:
-        out = pd.DataFrame(columns=["org_id", "rows", "slips", "slip_rate"])
+        out = pd.DataFrame(columns=[column, "rows", "slips", "slip_rate"])
         out.insert(0, "cut", cut)
         return out
     df["slip"] = df["outcome"].isin(POSITIVE)
-    g = df.groupby("org_id", dropna=False).agg(rows=("slip", "size"), slips=("slip", "sum")).reset_index()
+    g = df.groupby(column, dropna=False).agg(rows=("slip", "size"), slips=("slip", "sum")).reset_index()
     g["slip_rate"] = g["slips"] / g["rows"]
-    g = g.sort_values("slip_rate", ascending=False)
+    if order is None:
+        g = g.sort_values("slip_rate", ascending=False)
+    else:
+        rank = {v: i for i, v in enumerate(order)}
+        g = g.sort_values(column, key=lambda c: c.map(lambda v: (rank.get(v, len(rank)), str(v))))
     g.insert(0, "cut", cut)
     return g
+
+
+def by_org(rows: list[Row], cut: str = "evidenced") -> pd.DataFrame:
+    """Slip rate per owning org unit, worst first."""
+    return _rate_by(rows, "org_id", cut)
+
+
+def by_stage(rows: list[Row], cut: str = "evidenced") -> pd.DataFrame:
+    """Slip rate per stage, in lifecycle order.
+
+    Spec §8 names stage alongside org as a required cut, and the evidenced-labeling
+    design predicted the two evidence sources would have inverse stage profiles --
+    closure is weighted toward a KEP's final stage, merges toward whichever stage the
+    code landed for. Publishing the axis is what lets a reader check that.
+    """
+    return _rate_by(rows, "stage", cut, order=STAGE_ORDER)

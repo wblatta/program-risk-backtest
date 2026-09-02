@@ -74,7 +74,7 @@ def cmd_build(args) -> None:
 
 def cmd_backtest(args) -> None:
     from adapters.k8s.config import CONFIG
-    from backtest.metrics import by_org, rows_frame, signal_metrics
+    from backtest.metrics import by_org, by_stage, rows_frame, signal_metrics
     from backtest.run import run_backtest
     from core.store import Store
     from signals import SIGNALS
@@ -92,13 +92,17 @@ def cmd_backtest(args) -> None:
     dist = collections.Counter(r.outcome for r in rows)
     print(f"{len(rows)} rows | " + " ".join(f"{k}={v}" for k, v in sorted(dist.items(), key=lambda x: -x[1])))
 
-    for cut, sig_name, org_name in (("evidenced", "signals.csv", "by_org.csv"),
-                                    ("full", "signals_full.csv", "by_org_full.csv")):
+    for cut, sig_name, org_name, stage_name in (
+            ("evidenced", "signals.csv", "by_org.csv", "by_stage.csv"),
+            ("full", "signals_full.csv", "by_org_full.csv", "by_stage_full.csv")):
         table = signal_metrics(rows, by_id, L=DEFAULT_PARAMS["L"], cut=cut)
         table.to_csv(out / sig_name, index=False)
         by_org(rows, cut=cut).to_csv(out / org_name, index=False)
+        stages = by_stage(rows, cut=cut)
+        stages.to_csv(out / stage_name, index=False)
         print(f"\n--- {cut} cut ---")
         print(table.to_string(index=False, float_format=lambda x: f"{x:.3f}"))
+        print(stages.to_string(index=False, float_format=lambda x: f"{x:.3f}"))
 
 
 
