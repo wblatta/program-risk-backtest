@@ -62,7 +62,9 @@ git repos ──► adapter ──► event stream ──► point-in-time snaps
 
 **Signals** are pure functions over a snapshot. They see only what was knowable on that date and cannot reach the adapter or the outcome.
 
-**The backtest** takes weekly snapshots across each release cycle, records the first date each signal fired for each commitment, and joins that to an outcome the signal could not have seen.
+**The backtest** takes weekly snapshots across each release cycle, records both the first date each signal fired and whether it is still firing at the freeze, and joins that to an outcome the signal could not have seen. A sensitivity grid re-runs the whole thing across the a priori parameters so the published choice can be checked rather than trusted.
+
+**`register`** runs every signal on today's snapshot for a live cycle and splits the firings into *risk* (early enough to act on) and *status* (fires too late), each annotated with the precision it actually achieved in the backtest. An MCP wrapper exposes the same queries as read-only tools.
 
 The corpus-specific parts live behind an adapter interface with a conformance suite that any new corpus must pass, so pointing this at a different organisation's data is a matter of writing one adapter — not rewriting the analysis.
 
@@ -206,6 +208,7 @@ Outputs land in [`out/k8s/`](out/k8s/). For each of the two cuts: per-signal met
 | [`docs/sprint-1-notes.md`](docs/sprint-1-notes.md) | The first run in full: results, per-release histogram, and an extended section on what the numbers cannot support. Its manual audit validated the *sprint-1* labels, which this rule replaced |
 | [`docs/sprint-2-notes.md`](docs/sprint-2-notes.md) | The evidenced labeling rule, both cuts in full, and two corrections that invalidated earlier drafts of these numbers |
 | [`adapters/k8s/LABELING.md`](adapters/k8s/LABELING.md) | The outcome rule, normative — the doc states it, the code implements it, and they are kept in agreement |
+| [`out/k8s/sensitivity.csv`](out/k8s/sensitivity.csv) | Every conclusion re-run across the a priori parameters — the check that we did not tune toward our own result |
 | [`docs/adapters/gitlab.md`](docs/adapters/gitlab.md) | The second corpus: full mapping, and the credential blocker that stopped it |
 | [`docs/superpowers/specs/`](docs/superpowers/specs/) | Design spec and the amendments execution forced |
 
