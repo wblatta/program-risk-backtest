@@ -85,12 +85,20 @@ def cmd_backtest(args) -> None:
         ms = [m for m in ms if m.ordinal >= args.min_minor or not m.is_scheduled]
     rows = run_backtest(evs, ms, orgs, CONFIG, SIGNALS, dict(DEFAULT_PARAMS))
     out = OUT / "k8s"; out.mkdir(parents=True, exist_ok=True)
-    table = signal_metrics(rows, {m.id: m for m in ms}, L=DEFAULT_PARAMS["L"])
-    table.to_csv(out / "signals.csv", index=False)
+    by_id = {m.id: m for m in ms}
     rows_frame(rows).to_csv(out / "rows.csv", index=False)
-    by_org(rows).to_csv(out / "by_org.csv", index=False)
-    print(f"{len(rows)} rows, {sum(r.outcome is not None for r in rows)} labeled")
-    print(table.to_string(index=False, float_format=lambda x: f"{x:.2f}"))
+
+    import collections
+    dist = collections.Counter(r.outcome for r in rows)
+    print(f"{len(rows)} rows | " + " ".join(f"{k}={v}" for k, v in sorted(dist.items(), key=lambda x: -x[1])))
+
+    for cut, sig_name, org_name in (("evidenced", "signals.csv", "by_org.csv"),
+                                    ("full", "signals_full.csv", "by_org_full.csv")):
+        table = signal_metrics(rows, by_id, L=DEFAULT_PARAMS["L"], cut=cut)
+        table.to_csv(out / sig_name, index=False)
+        by_org(rows, cut=cut).to_csv(out / org_name, index=False)
+        print(f"\n--- {cut} cut ---")
+        print(table.to_string(index=False, float_format=lambda x: f"{x:.3f}"))
 
 
 
