@@ -1,4 +1,5 @@
 from signals.hollow_owner import hollow_owner
+from signals.item_silent import item_silent
 from signals.process_tracked import process_tracked
 from signals.prior_slip import prior_slip
 from signals.late_target import late_target
@@ -8,10 +9,13 @@ from signals.org_overcommitted import org_overcommitted
 
 # Spec §7 numbering: S0 process_tracked (control), S1 hollow_owner, S2 gate_unassigned,
 # S3 cross_org, S5 prior_slip, S6 org_overcommitted, S7 late_target.
+# `item_silent` is not in spec §7: it is the anonymous-activity proxy S1 was forced to
+# use before real actors existed, kept so the two can be compared directly.
 # S4a/S4b (dependency signals) require dependency extraction and are not yet built.
 SIGNALS = {
     "process_tracked": process_tracked,
     "hollow_owner": hollow_owner,
+    "item_silent": item_silent,
     "gate_unassigned": gate_unassigned,
     "cross_org": cross_org,
     "prior_slip": prior_slip,

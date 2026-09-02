@@ -8,7 +8,7 @@ from adapters.k8s.config import CONFIG, REPOS
 import json as _json
 
 from adapters.k8s.delivery import load_delivery_evidence
-from adapters.k8s.tracking import label_events
+from adapters.k8s.tracking import actor_activity_events, label_events
 from adapters.k8s.exceptions import SkippedExceptionsFile, load_exceptions
 from adapters.k8s.fetch import clone_or_update
 from adapters.k8s.git_history import dir_activity, file_versions, list_kep_dirs
@@ -174,7 +174,14 @@ class K8sAdapter:
                 tp = self.cache / "github" / "timeline" / f"{_kep_number_of(item_id)}.json"
                 if tp.exists():
                     try:
-                        out += label_events(item_id, _json.loads(tp.read_text()))
+                        timeline = _json.loads(tp.read_text())
+                        out += label_events(item_id, timeline)
+                        # Activity with a real actor. Sprint 1's git-derived activity
+                        # carries `k8s:unknown`, which forced S1 to test silence from
+                        # *anyone*; H1 claims something narrower about the listed owners.
+                        # Both streams are kept: they see different work (commits vs
+                        # discussion and linked PRs) and the signals report separately.
+                        out += actor_activity_events(item_id, timeline)
                     except (ValueError, OSError):
                         pass
             # known-milestone filter: drops a TARGET_SET (including a clear -- see

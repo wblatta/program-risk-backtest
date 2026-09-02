@@ -137,3 +137,21 @@ def test_owner_events_without_a_stage_do_not_enter_stage_owners():
     s = snapshot(evs, T(2))["k8s:kep-1"]
     assert s.owners["owning"] == {"k8s:sig-node"}
     assert "owning" not in s.stage_owners
+
+
+# --- bot activity is kept, but kept apart ---
+
+def test_bot_activity_does_not_count_as_human_activity():
+    """A staleness bot commenting on a dead item is not work on it. Counting it would
+    make abandoned enhancements read as alive -- the exact failure the silence signals
+    exist to catch."""
+    evs = [ev(T(5), K.ACTIVITY, {"actor_id": "k8s:@stale-bot", "kind": "commented", "bot": True})]
+    s = snapshot(evs, T(6))["k8s:kep-1"]
+    assert s.last_activity == {}
+    assert s.last_activity_any is None
+    assert s.last_activity_bot == {"k8s:@stale-bot": T(5)}
+
+def test_unflagged_activity_is_treated_as_human():
+    """Git-derived activity carries no `bot` key; it is a real commit and must count."""
+    evs = [ev(T(5), K.ACTIVITY, {"actor_id": "k8s:unknown", "kind": "commit"})]
+    assert snapshot(evs, T(6))["k8s:kep-1"].last_activity_any == T(5)

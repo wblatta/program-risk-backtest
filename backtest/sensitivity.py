@@ -28,7 +28,7 @@ from core.model import Milestone
 # would be noise: it does not read N, so its row would be identical in every cell and
 # invite a reader to see stability where nothing varied.
 PARAM_SIGNALS: dict[str, tuple[str, ...]] = {
-    "N": ("hollow_owner",),
+    "N": ("hollow_owner", "item_silent"),
     "M": ("gate_unassigned",),
     "K": ("late_target",),
 }

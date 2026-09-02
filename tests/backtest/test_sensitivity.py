@@ -41,6 +41,18 @@ def test_sweep_labels_its_cut():
     df = sweep(fake_runner, MS, {"N": 8, "M": 4, "K": 3, "L": 4}, {"N": [4]}, cut="full", n_boot=0)
     assert df["cut"].unique().tolist() == ["full"]
 
+def test_every_signal_reading_a_param_is_named_in_the_grid():
+    """A signal that reads N but is missing from PARAM_SIGNALS is silently omitted from
+    its own sensitivity report -- the grid would then claim coverage it does not have."""
+    import re
+    from pathlib import Path as _P
+    root = _P(__file__).resolve().parents[2] / "signals"
+    for param, names in PARAM_SIGNALS.items():
+        readers = {p.stem for p in root.glob("*.py")
+                   if re.search(rf'weeks\("{param}"\)|params\["{param}"\]', p.read_text())}
+        assert readers <= set(names), f"{param} is read by {readers - set(names)}, not in the grid"
+
+
 def test_param_signals_covers_every_a_priori_param_that_reaches_a_signal():
     """If a new signal starts reading a param, the grid must learn about it here rather
     than silently omitting that signal from its own sensitivity report."""

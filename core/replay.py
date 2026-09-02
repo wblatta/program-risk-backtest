@@ -23,6 +23,11 @@ class ItemState:
     # approval per stage, so an approver on `alpha` is no evidence about `beta` -- and
     # the union cannot tell you which stage is actually covered.
     stage_owners: dict[str, dict[str, set[str]]] = field(default_factory=dict)
+    # Bot activity, kept out of `last_activity` rather than discarded. A staleness bot
+    # commenting on a dead enhancement is not work on it, and counting it would make
+    # abandoned items read as alive -- the exact failure the silence signals exist to
+    # catch. Kept rather than dropped so a signal that wants it can still ask.
+    last_activity_bot: dict[str, datetime] = field(default_factory=dict)
 
     @property
     def last_activity_any(self) -> datetime | None:
@@ -86,7 +91,9 @@ def snapshot(events: Iterable[Event], as_of: datetime, *, presorted: bool = Fals
             # view during the cycle.
             (s.labels.add if p["op"] == "add" else s.labels.discard)(p["label"])
         elif e.kind == K.ACTIVITY:
-            actor = p["actor_id"]
-            if actor not in s.last_activity or s.last_activity[actor] < e.ts:
-                s.last_activity[actor] = e.ts
+            # Events with no `bot` key are human by default: git-derived activity predates
+            # the flag and is a real commit either way.
+            actor, into = p["actor_id"], (s.last_activity_bot if p.get("bot") else s.last_activity)
+            if actor not in into or into[actor] < e.ts:
+                into[actor] = e.ts
     return states

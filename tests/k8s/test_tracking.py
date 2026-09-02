@@ -93,3 +93,66 @@ def test_fetch_stops_cleanly_when_the_budget_runs_out(tmp_path):
     assert stopped is True, "should report that it stopped early"
     assert set(got) == {1}, "the one complete issue is kept"
     assert (tmp_path / "issues" / "1.json").exists()
+
+
+# --- real actors for activity (spec S1 needs owner-scoped activity, not anonymous) ---
+
+from adapters.k8s.tracking import ACTIVITY_EVENTS, actor_activity_events, actor_id
+
+
+def _tl(event, login, when="2024-03-01T00:00:00Z", **extra):
+    return {"event": event, "created_at": when, "actor": {"login": login}, **extra}
+
+
+def test_comments_become_activity_with_a_real_actor():
+    evs = actor_activity_events("k8s:kep-1", [_tl("commented", "alice")])
+    assert len(evs) == 1
+    assert evs[0].kind == "activity" and evs[0].source == "tracking-issue"
+    assert evs[0].payload["actor_id"] == "k8s:@alice"
+    assert evs[0].payload["kind"] == "commented"
+
+def test_cross_references_count_as_activity():
+    """A PR linked to the tracking issue is work on the item, by the person who linked it."""
+    assert [e.payload["actor_id"] for e in actor_activity_events("k8s:kep-1", [_tl("cross-referenced", "bob")])] == ["k8s:@bob"]
+
+def test_bookkeeping_events_are_not_activity():
+    """`labeled` is the release team's process, not work on the enhancement -- counting
+    it would let a bot's housekeeping make an abandoned item look alive."""
+    assert actor_activity_events("k8s:kep-1", [_tl("labeled", "k8s-ci-robot", label={"name": "tracked/yes"})]) == []
+
+def test_mentioned_and_subscribed_are_not_activity():
+    """`mentioned` records that someone was named by another person; `subscribed` is a
+    notification preference. Neither is an action taken on the work."""
+    tl = [_tl("mentioned", "carol"), _tl("subscribed", "carol")]
+    assert actor_activity_events("k8s:kep-1", tl) == []
+
+def test_entries_without_an_actor_are_skipped():
+    assert actor_activity_events("k8s:kep-1", [{"event": "commented", "created_at": "2024-03-01T00:00:00Z"}]) == []
+
+def test_entries_without_a_timestamp_are_skipped():
+    assert actor_activity_events("k8s:kep-1", [{"event": "commented", "actor": {"login": "alice"}}]) == []
+
+def test_falls_back_to_user_when_actor_is_absent():
+    """Comment entries carry the author under `user`; most other types use `actor`."""
+    tl = [{"event": "commented", "created_at": "2024-03-01T00:00:00Z", "user": {"login": "dave"}}]
+    assert [e.payload["actor_id"] for e in actor_activity_events("k8s:kep-1", tl)] == ["k8s:@dave"]
+
+def test_output_is_sorted_and_bots_are_kept_but_marked():
+    """Bots act on real timestamps and excluding them here would silently change what
+    `activity` means. Mark them and let the signal decide."""
+    tl = [_tl("commented", "zoe", "2024-05-01T00:00:00Z"), _tl("commented", "k8s-ci-robot", "2024-04-01T00:00:00Z")]
+    evs = actor_activity_events("k8s:kep-1", tl)
+    assert [e.ts.month for e in evs] == [4, 5]
+    assert evs[0].payload["bot"] is True and evs[1].payload["bot"] is False
+
+def test_activity_events_vocabulary_is_explicit():
+    assert "commented" in ACTIVITY_EVENTS and "labeled" not in ACTIVITY_EVENTS
+
+
+def test_actor_id_matches_person_id():
+    """The two id-minting paths must agree, or an owner-scoped signal silently matches
+    nothing. kep.yaml carries `@alice`; the GitHub API returns `alice`; both must land on
+    the same id."""
+    from adapters.k8s.events import person_id
+    assert actor_id("Alice") == person_id("@Alice") == "k8s:@alice"
+    assert actor_id("@Alice") == person_id("@alice")
