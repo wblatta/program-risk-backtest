@@ -6,6 +6,9 @@ dependencies = ["pyyaml>=6", "pandas>=2,<3", "numpy>=1.26"]  # pandas 3.x is bre
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+# Spec §11 names FastMCP for the sprint-5 wrapper. Optional: the pipeline, the
+# backtest and every test run without it; only `mcp_server.py` imports it.
+mcp = ["fastmcp>=2"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
