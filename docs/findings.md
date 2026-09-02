@@ -251,10 +251,66 @@ v1.32.
 - **H2 is untested, not refuted.** 21 and 62 firings decide nothing.
 - **One corpus, one organisation.** Kubernetes has unusually strong process hygiene and
   machine-readable artifacts, which makes it the best case for this method rather than a
-  typical one.
+  typical one. How unusual is now measured rather than asserted — see below.
 - **`org_overcommitted` fires on 73% of rows.** Even where its interval clears 1.0 it is
   too indiscriminate to act on, and it is reported as null for that reason as much as for
   its interval.
+
+
+## Why there is no second corpus
+
+"One corpus, one organisation" is this project's largest limitation, and the obvious
+answer is to run the pipeline somewhere else. Before writing a second adapter, 41
+candidate GitHub projects were measured against what the pipeline actually needs
+([`out/corpus_survey.csv`](../out/corpus_survey.csv), `tools/corpus_survey.py`).
+`kubernetes/enhancements` is included as a reference row, so candidates are read against
+the corpus known to work rather than against an absolute threshold.
+
+The decisive property is **retargeting**. A `slipped` outcome exists only because work is
+moved from one release to a later one and leaves a timestamped trace. Everything else
+degrades; this disqualifies.
+
+| | of 41 |
+|---|---|
+| show no retargeting at all — no positive class to predict | **8** |
+| have no milestoned issues at all | 6 |
+| have no team/area labels, so `cross_org` and `org_overcommitted` cannot run | 13 |
+| have no scope-decision label, so **the S0 control cannot be reproduced** | 22 |
+| score adequate on all four criteria | **4** |
+
+And the four that pass are `kubernetes/enhancements` itself, `knative/serving`,
+`etcd-io/etcd` and `argoproj/argo-cd` — **all three non-reference passes are
+Kubernetes-ecosystem projects that adopted the KEP process.** The artifacts this method
+needs, outside Kubernetes, exist mainly where someone copied Kubernetes.
+
+### The largest candidate, and why it was still declined
+
+`golang/go` carries **51,219 milestoned issues** — a hundred times the reference corpus —
+with 79% milestone coverage and a 42% retarget rate, under governance genuinely unlike
+Kubernetes': a proposal committee rather than SIGs, and no shared process ancestry. It is
+the strongest generalisation test available.
+
+It cannot reproduce the control. Go's release-process labels are far too rare to serve
+(`early-in-cycle` 281 issues, `okay-after-beta1` 130, against 51k milestoned), and its
+`Backlog` and `Unplanned` milestones — 10,304 issues, the obvious candidate — are
+**circular**: in Go, "the team deprioritised this" and "the work slipped" are the same
+event. In Kubernetes they are two different artifacts, which is what makes S0 a control at
+all.
+
+Without a control the result would be "silence predicts slippage in Go at some lift", with
+magnitudes not comparable to these, and no answer to the question that makes the
+Kubernetes finding worth reading: *does this beat what the organisation already knows?*
+
+### What the survey does and does not establish
+
+It establishes that **the inputs are rare**. It does **not** establish that the signals
+would fail elsewhere — that question is untouched, and the honest position remains that
+every result here is one organisation's.
+
+But it converts the limitation from an apology into a measurement, and it says something
+the second corpus would not have: Kubernetes' artifact discipline is unusual, and a method
+built on it inherits that unusualness. A reader deciding whether to adopt any of this
+should first check whether their own corpus retargets in a way anyone could observe.
 
 ## On models, and why there isn't one
 
@@ -316,10 +372,12 @@ another. Nothing internal caught them: every internal check compares the corpus 
 
 ## If someone continues this
 
-- **A second corpus, on GitHub.** The one thing that separates "this works" from "this
-  works on Kubernetes." It needs no new credentials: GitHub's timeline API carries
-  `milestoned` / `demilestoned` events with timestamps, which is exactly the point-in-time
-  target history this design requires, and the rate-limited client already exists.
+- **A second corpus, knowing what it costs.** Measured, not guessed: of 41 candidates only
+  three non-Kubernetes projects clear the bar, and all three copied the KEP process.
+  `knative/serving` is the cleanest replication and proves the least; `golang/go` is the
+  strongest test and cannot reproduce the control. Either is a real week of work for a
+  claim that will not be numerically comparable to these results. Read
+  [`out/corpus_survey.csv`](../out/corpus_survey.csv) before committing to it.
 - **Run `gate_unassigned` at M=6.** The grid says it is both actionable and predictive
   there. This is the one finding here that is directly operational.
 - **Chase recall, not precision.** Precision is adequate. Coverage is the weakness, in the

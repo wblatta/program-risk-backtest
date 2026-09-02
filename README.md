@@ -184,11 +184,31 @@ Four recommendations, each tied to a row above rather than to a prior.
 
 The labeling rule requires positive evidence that code landed — a tracking issue closed in the milestone's window, or a `kubernetes/kubernetes` PR milestoned for that release merged. Rows with neither are `unresolved`: **290 rows, 23% of the corpus**, outcome unknown rather than failed. 105 of them carry a `kep.yaml` self-report claiming delivery, so the residual is work whose paper trail cannot be followed, not simply work that stalled.
 
-Recall is low throughout — the best instrument here flags a sixth of committed work. Most slippage is caught by none of these signals. The freeze evaluation point was chosen after seeing results, so treat specific lift values as suggestive. The 180-day censoring cutoff is a judgment that moves magnitudes but no directions. And this is one corpus: Kubernetes has unusually strong process hygiene, which makes it the best case for this method rather than a typical one.
+Recall is low throughout — the best instrument here flags a sixth of committed work. Most slippage is caught by none of these signals. The freeze evaluation point was chosen after seeing results, so treat specific lift values as suggestive. The 180-day censoring cutoff is a judgment that moves magnitudes but no directions. And this is one corpus: Kubernetes has unusually strong process hygiene, which makes it the best case for this method rather than a typical one — how unusual is measured below, not asserted.
 
 **No learned model was tested. That was a design decision, not an omission — see the next section.**
 
 [`docs/findings.md`](docs/findings.md) states all of this in full, along with the six errors this project made and corrected — including a fetch bug that meant an earlier draft published conclusions drawn from 6% of the available data.
+
+## Why there is no second corpus
+
+"One corpus, one organisation" is this project's largest limitation. Before writing a second adapter, **41 candidate GitHub projects were measured** against what the pipeline actually needs ([`out/corpus_survey.csv`](out/corpus_survey.csv)), with `kubernetes/enhancements` included as a reference row so candidates are read against the corpus known to work.
+
+The decisive property is **retargeting**: a `slipped` outcome exists only because work is moved from one release to a later one and leaves a timestamped trace. Everything else degrades; this disqualifies.
+
+| | of 41 |
+|---|---|
+| show no retargeting at all — no positive class to predict | **8** |
+| have no milestoned issues at all | 6 |
+| have no team/area labels, so two signals cannot run | 13 |
+| have no scope-decision label, so **the control cannot be reproduced** | 22 |
+| clear all four criteria | **4** |
+
+The four that clear it are `kubernetes/enhancements` itself, `knative/serving`, `etcd-io/etcd` and `argoproj/argo-cd` — **every non-reference pass is a Kubernetes-ecosystem project that adopted the KEP process.** Outside Kubernetes, the artifacts this method needs exist mainly where someone copied Kubernetes.
+
+`golang/go` was the strongest candidate on every other axis — 51,219 milestoned issues, 79% coverage, 42% retargeting, and governance genuinely unlike Kubernetes'. It was still declined, because it cannot reproduce the control: its release-process labels are far too rare (281 issues against 51k), and its `Backlog` and `Unplanned` milestones (10,304 issues) are **circular** — in Go, "the team deprioritised this" and "the work slipped" are the same event. In Kubernetes they are two different artifacts, which is what makes the control a control.
+
+**What this establishes and what it does not.** It establishes that the *inputs* are rare. It does not establish that the *signals* would fail elsewhere — that question is untouched, and every result here remains one organisation's. But it turns the limitation from an apology into a measurement, and it offers a reader something a second corpus would not: before adopting any of this, check whether your own corpus retargets in a way anyone could observe.
 
 ## Why there is no model
 
@@ -297,16 +317,17 @@ Run `pytest tests/conformance/` against the new adapter. Six checks; all six are
 | [`docs/sprint-1-notes.md`](docs/sprint-1-notes.md) | The first run in full: results, per-release histogram, and an extended section on what the numbers cannot support. Its manual audit validated the *sprint-1* labels, which this rule replaced |
 | [`docs/sprint-2-notes.md`](docs/sprint-2-notes.md) | The evidenced labeling rule, both cuts in full, and two corrections that invalidated earlier drafts of these numbers |
 | [`adapters/k8s/LABELING.md`](adapters/k8s/LABELING.md) | The outcome rule, normative — the doc states it, the code implements it, and they are kept in agreement |
+| [`out/corpus_survey.csv`](out/corpus_survey.csv) | 41 candidate corpora measured against what the pipeline needs — the evidence behind not building a second one |
 | [`out/k8s/sensitivity.csv`](out/k8s/sensitivity.csv) | Every conclusion re-run across the a priori parameters — the check that we did not tune toward our own result |
 | [`docs/adapters/gitlab.md`](docs/adapters/gitlab.md) | The second corpus: full mapping, and the credential blocker that stopped it |
 | [`docs/superpowers/specs/`](docs/superpowers/specs/) | Design spec and the amendments execution forced |
 
 ## Status
 
-Sprints 0–3 complete, and the right-censoring decision sprint 2 left open is now made. Sprint 1 built the pipeline and the first three signals. Sprint 2 replaced the fallthrough labeling rule with positive evidence of delivery and added the S0 control. **Sprint 3** built the four remaining spec'd signals (S2, S3, S4a, S4b, S6), gave `activity` real actors so H1 could be tested as stated, added the dependency extraction that answers spec §14's open question, published the sensitivity grid and the `register` live view, and produced verdicts on all three hypotheses.
+**Complete against the spec.** Every deliverable in `docs/superpowers/specs/2026-08-26-program-risk-backtest-design.md` is built: all ten signals in §7, all four outputs in §8 plus the sensitivity grid and both evaluation points, §9's `register`, §10's eight-section finding, §11's MCP wrapper, and answers to all six of §14's open questions recorded in the spec beside them. 317 tests, six corpus-agnostic conformance checks.
 
-All ten signals in spec §7 are built, all six of spec §14's open questions are answered in the spec beside the questions, and all six conformance checks pass on 296 tests.
+Sprint 1 built the pipeline and the first three signals. Sprint 2 replaced the fallthrough labeling rule with positive evidence of delivery and added the S0 control. Sprint 3 built the four remaining signals, gave `activity` real actors so H1 could be tested as stated, added the dependency extraction that answers §14's open question, published the sensitivity grid, the conjunction analysis and the `register` view, made the right-censoring decision sprint 2 left open, and produced verdicts on all three hypotheses.
 
-**A second corpus is the remaining work, and it should be another GitHub project.** GitHub's timeline API carries `milestoned` / `demilestoned` events with timestamps — exactly the point-in-time target history this design requires — so the existing rate-limited client covers it and no new credentials are needed. [`docs/adapters/gitlab.md`](docs/adapters/gitlab.md) records why GitLab was evaluated and set aside: its milestone-history endpoint requires authentication on every public project, and a second corpus is a proxy for "some other organisation" either way.
+**Sprint 4's second corpus was scoped, measured and declined.** 41 candidate projects were surveyed against what the pipeline needs; only three non-Kubernetes projects clear the bar and all three copied the KEP process. The strongest candidate by every other measure, `golang/go`, cannot reproduce the control. That measurement is published as a finding in its own right rather than as a caveat.
 
-H2 stays open regardless. Neither KEP prose nor GitHub cross-references carry a typed dependency relation, so no GitHub corpus can close it.
+What a continuation should tackle is at the end of [`docs/findings.md`](docs/findings.md). The honest short version: chase recall, and give the dependency graph a source that types its edges.
