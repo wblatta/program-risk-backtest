@@ -60,49 +60,37 @@ Those tests place their fixtures at the *exact* boundary second and were each ve
 
 ## Results
 
-A row is only scored `shipped` when there is positive evidence the code landed — the tracking issue closed inside the milestone's window, or a `kubernetes/kubernetes` PR **milestoned for that release** was merged. Rows with neither are labelled `unresolved`, meaning *unknown to this instrument*, not *failed*. That splits the corpus in two, so the results are published as two cuts.
+**[`docs/findings.md`](docs/findings.md) is the conclusion.** What follows is the summary.
 
-The headline table is the **evidenced cut**: the 965 rows whose outcome is known — either delivery evidence says it landed, or a recorded retarget, drop, or exception says it did not. Base rate 39.3% — a signal is useful if it beats that. Confidence intervals are bootstrapped (n=1000).
+Four signals were tested against 1,255 committed deliverables across 19 release cycles. One works, one is backwards, one is null, and the fourth is the project's own status label included as a control. Results are published under two cuts — `evidenced` (only rows whose outcome can be verified) and `full` (all rows, unknowns counted as not-delivered) — because 23% of outcomes cannot be confirmed from the corpus. Compare the lift column across cuts and nothing else; the base rates differ.
 
-**Evidenced cut** — 965 rows, base rate 0.393:
+**Evaluated at the enhancements freeze, evidenced cut** (n=965, base rate 0.393):
 
-| signal | what it looks for | fires on | precision | **lift** | 95% CI | median lead |
-|---|---|---|---|---|---|---|
-| `hollow_owner` | no activity from anyone in N weeks | 367 rows | 56.4% | **1.44** | 1.33 – 1.55 | 8.4 weeks |
-| `prior_slip` | this item has been retargeted before | 375 rows | 42.4% | 1.08 | 0.98 – 1.17 | 7.3 weeks |
-| `late_target` | committed close to the freeze | 611 rows | 31.3% | **0.80** | 0.73 – 0.86 | 5.3 weeks |
-
-**`hollow_owner` works.** Silence is the strongest available predictor of a missed commitment — 44% more likely to slip than the base rate, with the confidence interval clear of 1.0, and it says so a median of **8.4 weeks before the deadline**. That is a full sprint and a half of warning, from a signal that requires nobody to fill in a status field. It is also *stronger* on rows whose delivery can be verified than on the full sample (1.44 against 1.36).
-
-**`prior_slip` does not work.** Its confidence interval includes 1.0 under both cuts. "It slipped before, so it will slip again" is intuitive and this data does not support it.
-
-**`late_target` is backwards.** Its entire confidence interval sits *below* 1.0 under both cuts: work committed close to the freeze slipped **less** often, not more. The most plausible reading is selection — a team that commits late commits with better information, and the ones that were going to fail had already failed by then. Whatever the mechanism, the prior was wrong, and the sign is the interesting part.
-
-### The full cut, and why both are published
-
-The other 290 rows have no delivery evidence. Discarding them would quietly assume they resemble the rows that do, so the same measurement is also run over all 1,255 rows with `unresolved` counted as non-positive — the pessimistic reading:
-
-**Full cut** — 1,255 rows, base rate 0.302:
-
-| signal | fires on | precision | **lift** | 95% CI | median lead |
+| signal | what it looks for | fires | precision | **lift** | 95% CI |
 |---|---|---|---|---|---|
-| `hollow_owner` | 505 rows | 41.0% | **1.36** | 1.25 – 1.46 | 8.6 weeks |
-| `prior_slip` | 482 rows | 33.0% | 1.09 | 0.997 – 1.21 | 7.3 weeks |
-| `late_target` | 772 rows | 24.7% | **0.82** | 0.75 – 0.88 | 5.3 weeks |
+| `hollow_owner` | nobody has touched it in N weeks | 160 | 0.856 | **2.18** | 2.01 – 2.37 |
+| `tracked/no` | the release team says it is out of scope | 116 | 0.767 | **1.95** | 1.75 – 2.17 |
+| **both together** | | 72 | **0.917** | **2.33** | 2.12 – 2.57 |
 
-**Compare the lift columns and nothing else.** The two cuts have different base rates — 0.393 against 0.302 — so precision is not comparable between them: `hollow_owner` reads 56.4% in one table and 41.0% in the other while behaving identically. Lift is normalised by base rate and is comparable. Recall is identical by construction, since dropping `unresolved` removes only non-positive rows.
+**Silence is a real predictor, and it is the durable one.** `hollow_owner` is significant on both cuts and never falls below the base rate in any cycle.
 
-The full cut is, by construction, the pre-evidence baseline: it counts every row, and `shipped` and `unresolved` are both non-positive, so it cannot see the evidence rule at all. The comparison is therefore "rows whose outcome can be verified" against "everything, assuming the worst about what we cannot see."
+**The project's own label is just as good — while it is maintained.** On the evidenced cut our signal is significantly ahead; on the full cut the difference vanishes. Neither dominates.
 
-Reporting the negative and the backwards result is the point. A study that only surfaces the signal that worked is not a study — and an earlier revision of this file did claim `prior_slip` was significant on the evidenced cut. It was, on data that turned out to be 6% of the timeline history. See [`docs/sprint-2-notes.md`](docs/sprint-2-notes.md) §3.
+**Together they are much better than either.** They overlap on only 39% of firings and the conjunction beats both, significantly, on both cuts: 92% precision on 7% of the corpus, eight weeks before the deadline.
+
+**And then the label was abandoned.** After v1.27 the release team stopped applying `tracked/no` by the freeze — from 4–20 firings per cycle to 1. The conjunction does not exist in any recent cycle. `hollow_owner` in the same period held at 0.846 precision and *rose* to lift 2.52.
+
+> Broken process hygiene is not only a risk signal in itself. It destroys the signals that depend on hygiene — exactly when you most need something that does not.
+
+**Two signals did not work, reported because a study that only surfaces its successes is not a study.** `prior_slip` ("it slipped before") is indistinguishable from no effect under both cuts. `late_target` is *negatively* predictive with its whole interval below 1.0 — work committed close to the freeze slipped **less**, most plausibly because a team committing late commits with better information.
 
 ## What these numbers cannot support
 
-`unresolved` is 290 rows, **23% of the corpus** — the honest size of what this instrument cannot see. It is visible in the output rather than folded into `shipped`, which is what sprint 1's v1 rule did, but it is not the same thing as knowing those outcomes. 105 of those 290 (36%) carry a `kep.yaml` self-report claiming delivery at exactly that milestone, so the residual is not simply work that stalled — it is work whose paper trail we cannot follow.
+The labeling rule requires positive evidence that code landed — a tracking issue closed in the milestone's window, or a `kubernetes/kubernetes` PR milestoned for that release merged. Rows with neither are `unresolved`: **290 rows, 23% of the corpus**, outcome unknown rather than failed. 105 of them carry a `kep.yaml` self-report claiming delivery, so the residual is work whose paper trail cannot be followed, not simply work that stalled.
 
-Evidence coverage runs `stable` 72.9%, `alpha` 59.5%, `beta` 59.4%. An earlier revision reported `beta` at 18.8% and explained the gap as structural — closure being evidence about an enhancement's final stage and merges about its first. That was an artifact of a timeline fetch truncated at page 1; with complete data alpha and beta are within a point of each other and no stage effect survives. Closure's attribution window remains a heuristic, and a merged PR proves code milestoned for a release landed — not that the feature shipped, since reverts, disabled feature gates and partial implementations are all invisible to it.
+Recall is low throughout — the best instrument here flags a sixth of committed work. Most slippage is caught by none of these signals. The freeze evaluation point was chosen after seeing results, so treat specific lift values as suggestive. No learned model was tested; every signal is a hand-written rule. And this is one corpus: Kubernetes has unusually strong process hygiene, which makes it the best case for this method rather than a typical one.
 
-The rule is also checked against its predecessor and does not fully agree with it. Of the rows sprint 1 could prove wrong from the corpus itself, 60 are now `unresolved` and **nine are still `shipped`** — enhancements whose own `latest-milestone` never claims to have reached the release, sitting next to positive delivery evidence — seven a closed tracking issue, two a merged PR. Those nine are reported rather than patched away: an unmaintained metadata field alongside real delivery evidence reads better as *delivered with poor hygiene* than as *not delivered*, and poor hygiene is the phenomenon this project set out to measure. The reasoning is in [`docs/sprint-2-notes.md`](docs/sprint-2-notes.md).
+[`docs/findings.md`](docs/findings.md) states all of this in full, along with the four errors this project made and corrected — including a fetch bug that meant an earlier draft published conclusions drawn from 6% of the available data.
 
 ## Findings about the data
 
@@ -137,6 +125,7 @@ Outputs land in [`out/k8s/`](out/k8s/): per-signal metrics and a by-team cut for
 
 | document | what it covers |
 |---|---|
+| [`docs/findings.md`](docs/findings.md) | **The conclusions**, what they cannot support, and the four things this project got wrong before arriving at them |
 | [`docs/sprint-1-notes.md`](docs/sprint-1-notes.md) | The first run in full: results, per-release histogram, and an extended section on what the numbers cannot support. Its manual audit validated the *sprint-1* labels, which this rule replaced |
 | [`docs/sprint-2-notes.md`](docs/sprint-2-notes.md) | The evidenced labeling rule, both cuts in full, and two corrections that invalidated earlier drafts of these numbers |
 | [`adapters/k8s/LABELING.md`](adapters/k8s/LABELING.md) | The outcome rule, normative — the doc states it, the code implements it, and they are kept in agreement |

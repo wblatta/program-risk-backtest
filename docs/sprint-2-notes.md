@@ -372,3 +372,46 @@ reported in the previous draft does not exist.
 1. Reverse the labeling precedence — **done**, this section.
 2. Widen `Signal` to `(item_id, stage)` — **done**, §1.
 3. Land the tracking-issue API data — **done**, §2, and completed here.
+
+---
+
+## 4. S0, the control — and the project's conclusion
+
+Sprint 1 listed S0 `process_tracked` as a P0 and set the bar it exists to enforce: *"a
+signal that cannot beat the project's own status field is not worth reporting."* It was
+never built. Building it changed the conclusion twice before it settled.
+
+Making it honest required tracking labels inside `snapshot()` — a `LABEL_CHANGED` event
+kind, a `tracking-issue` source, and `ItemState.labels` — so the signal reads the release
+team's view *during* the cycle. Reading today's labels would have been a leak: they are
+the team's final word, not their view at the time.
+
+**The full result is in [`findings.md`](findings.md).** In short: `hollow_owner` and the
+human `tracked/no` label are comparably good, overlap on only 39% of firings, and are
+significantly better in conjunction (92% precision on 7% of the corpus) than either
+alone. Then the label was abandoned after v1.27 — 4–20 firings per cycle down to 1 —
+taking the conjunction with it, while `hollow_owner` held at 0.846 precision and rose to
+lift 2.52 in exactly that period.
+
+Two corrections were made in the course of getting there, both recorded in `findings.md`:
+S0 was first reported as beating our signal, on an invalid comparison between a
+freeze-point predictor and a first-fired lift; and the "our signal wins" claim that
+replaced it turned out to be cut-dependent, holding on the evidenced cut and vanishing on
+the full one.
+
+### Status of sprint 1's P0 list — closed
+
+1. Reverse the labeling precedence — **done**, §3.
+2. Widen `Signal` to `(item_id, stage)` — **done**, §1.
+3. Land the tracking-issue API data — **done**, §2, completed in §3.
+4. Give `activity` real actors — **not done.** `hollow_owner` still tests silence from
+   everyone rather than from the listed owners, which is what H1 actually claims.
+5. Re-run the manual audit — **done**, §3. It found a real defect on first execution.
+6. Sensitivity grid over N, K, L — **not done.** The parameters remain as specified a
+   priori and were never tuned, which is the honest position, but their sensitivity is
+   unmeasured.
+7. Decide about censoring — **partially.** The cut is reported; v1.36/v1.37 remain in the
+   headline figures.
+
+The project closes here. What a continuation should tackle is listed at the end of
+`findings.md`.
