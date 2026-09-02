@@ -162,7 +162,9 @@ def test_closure_evidence_yields_shipped():
 
 def test_merge_evidence_yields_shipped():
     evs = [tgt(T(2024, 5, 1), "alpha", "k8s:v1.31")]
-    d = {1: DeliveryEvidence(closed_at=None, merges=(T(2024, 6, 15),))}
+    # Attribution is by the PR's own milestone, not by when it merged.
+    d = {1: DeliveryEvidence(closed_at=None, merges=(T(2024, 6, 15),),
+                             merge_milestones=("k8s:v1.31",))}
     r = results(outcome_events(evs, MS, {}, TODAY, delivery=d))
     assert r[("k8s:kep-1", "alpha", "k8s:v1.31")] == "shipped"
 

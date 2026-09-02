@@ -112,7 +112,8 @@ def outcome_events(events: list[Event], milestones: list[Milestone],
                                 start = m.dates.get("start")
                                 if start is not None:
                                     evidence = has_evidence(
-                                        delivery.get(_kep_number(item_id)), start, m.release)
+                                        delivery.get(_kep_number(item_id)), start, m.release,
+                                        milestone_id=m.id)
                             result = "shipped" if (delivery is None or evidence) else "unresolved"
                 out.append(Event(_dt(m.release), item_id, K.OUTCOME,
                                  {"milestone_id": m.id, "stage": stage, "result": result,
