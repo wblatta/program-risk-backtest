@@ -32,6 +32,13 @@ class Row:
     org_id: str | None
     outcome: str | None
     first_fired: dict[str, datetime | None] = field(default_factory=dict)
+    # Whether each signal is firing in the *last* snapshot of the cycle, the one taken at
+    # the freeze. `first_fired` answers "did this ever fire"; this answers "is it saying
+    # so at the moment the commitment locks", which is the question a release lead
+    # actually faces and a different measurement. Reported side by side, never mixed --
+    # comparing one signal's freeze-point precision against another's first-fired lift
+    # was a published error once (findings.md, "what we got wrong").
+    fired_at_freeze: dict[str, bool] = field(default_factory=dict)
 
 
 def _eod(d) -> datetime:
@@ -56,6 +63,7 @@ def run_backtest(events: list[Event], milestones: list[Milestone], org_units: li
         commit_dt, freeze_dt = _eod(ef), _eod(m.freeze)
         committed = {(iid, st) for iid, s in snapshot(events, commit_dt, presorted=True).items() for st, tgt in s.targets.items() if tgt == m.id}
         first: dict[tuple[str, str], dict[str, datetime | None]] = {key: {n: None for n in signals} for key in committed}
+        at_freeze: dict[tuple[str, str], dict[str, bool]] = {key: {n: False for n in signals} for key in committed}
         # Leakage boundary on the calendar (see signals/base.py, Context.milestones_by_id):
         # a signal evaluated at milestone m must not be able to read a *later* milestone's
         # stored freeze/release dates, which are the post-hoc actuals. Filtering here makes
@@ -66,16 +74,20 @@ def run_backtest(events: list[Event], milestones: list[Milestone], org_units: li
             states = snapshot(events, as_of, presorted=True)
             prior = outcome_list[:bisect_right(outcome_ts, as_of)]   # same reason: no full rescan per week
             ctx = Context(as_of, m, visible, org_units, config, dict(params), prior)
+            is_last = as_of + timedelta(weeks=1) > freeze_dt
             for name, fn in signals.items():
                 fired = fn(states, ctx)
                 for key in committed:
                     if key in fired and first[key][name] is None:
                         first[key][name] = as_of
+                    if is_last:
+                        at_freeze[key][name] = key in fired
             as_of += timedelta(weeks=1)
         final = snapshot(events, commit_dt, presorted=True)
         for (iid, st) in sorted(committed):
             owning = sorted(final[iid].owners.get("owning", ()))
             oc = outcomes.get((iid, st, m.id))
             rows.append(Row(iid, st, m.id, owning[0] if owning else None,
-                            oc.payload["result"] if oc and oc.ts > freeze_dt else None, first[(iid, st)]))
+                            oc.payload["result"] if oc and oc.ts > freeze_dt else None,
+                            first[(iid, st)], at_freeze[(iid, st)]))
     return rows

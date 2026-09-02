@@ -128,3 +128,34 @@ def test_signal_firing_is_scoped_to_the_stage_it_names():
     assert set(fired) == {"alpha", "beta"}
     assert fired["beta"] is not None, "signal named beta; beta row should be flagged"
     assert fired["alpha"] is None, "signal never named alpha; alpha row must not be flagged"
+
+
+# --- fired-at-freeze, the decision-point evaluation ---
+
+def only_early(states, ctx):
+    """Fires up to the end of June, then stops -- so it has a `first_fired` but is not
+    firing when the commitment locks."""
+    return _all_stages(states) if ctx.as_of <= T(6, 30) else set()
+
+
+def _run_simple():
+    return run_backtest(base_events(), [M31], [], CFG,
+                        {"always": always, "only_early": only_early},
+                        {"N": 8, "M": 4, "K": 3, "L": 4})
+
+def test_row_records_whether_each_signal_fires_at_the_freeze_snapshot():
+    """`first_fired` answers "did this ever fire during the cycle"; `fired_at_freeze`
+    answers "is it firing at the moment the commitment is locked". They are different
+    questions and the second is the one a release lead actually faces."""
+    rows = _run_simple()
+    r = rows[0]
+    assert set(r.fired_at_freeze) == set(r.first_fired)
+    assert isinstance(r.fired_at_freeze["always"], bool)
+
+def test_a_signal_that_only_fired_early_is_not_firing_at_freeze():
+    rows = _run_simple()
+    assert rows[0].fired_at_freeze["only_early"] is False
+    assert rows[0].first_fired["only_early"] is not None
+
+def test_a_signal_firing_throughout_is_firing_at_freeze():
+    assert _run_simple()[0].fired_at_freeze["always"] is True

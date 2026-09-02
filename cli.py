@@ -97,11 +97,19 @@ def cmd_backtest(args) -> None:
             ("full", "signals_full.csv", "by_org_full.csv", "by_stage_full.csv")):
         table = signal_metrics(rows, by_id, L=DEFAULT_PARAMS["L"], cut=cut)
         table.to_csv(out / sig_name, index=False)
+        # The decision-point view, published beside the designed metric rather than
+        # instead of it. findings.md's headline is a freeze-point number; before this it
+        # came from an uncommitted one-off computation and could not be reproduced.
+        freeze = signal_metrics(rows, by_id, L=DEFAULT_PARAMS["L"], cut=cut, evaluation="at_freeze")
+        freeze.to_csv(out / sig_name.replace(".csv", "_at_freeze.csv"), index=False)
         by_org(rows, cut=cut).to_csv(out / org_name, index=False)
         stages = by_stage(rows, cut=cut)
         stages.to_csv(out / stage_name, index=False)
-        print(f"\n--- {cut} cut ---")
+        print(f"\n--- {cut} cut, first-fired ---")
         print(table.to_string(index=False, float_format=lambda x: f"{x:.3f}"))
+        print(f"\n--- {cut} cut, at freeze ---")
+        cols = ["signal", "fired", "precision", "recall", "lift", "lift_ci_lo", "lift_ci_hi"]
+        print(freeze[cols].to_string(index=False, float_format=lambda x: f"{x:.3f}"))
         print(stages.to_string(index=False, float_format=lambda x: f"{x:.3f}"))
 
 

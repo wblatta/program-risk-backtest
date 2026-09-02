@@ -33,22 +33,44 @@ def _lead_weeks(fired: datetime, m: Milestone) -> float:
     return (m.freeze - fired.date()).days / 7
 
 
+EVALUATIONS = ("first_fired", "at_freeze")
+
+
 def signal_metrics(rows: list[Row], milestones_by_id: dict[str, Milestone], L: int, n_boot: int = 1000, seed: int = 0,
-                   cut: str = "evidenced") -> pd.DataFrame:
+                   cut: str = "evidenced", evaluation: str = "first_fired") -> pd.DataFrame:
+    """Per-signal precision/recall/lift, under one of two evaluation points.
+
+    `first_fired` -- spec §8's designed metric -- asks whether the signal fired at any
+    point during the cycle, and reports how early. `at_freeze` asks whether it is firing
+    at the moment the commitment locks, which is the question a release lead faces.
+
+    Both are published because they answer different questions and neither dominates. They
+    must never be compared across modes: reporting one signal's freeze-point precision
+    against another's first-fired lift is a published error this project already made once
+    (findings.md, "what we got wrong"). The `eval` column exists so a table cannot lose
+    track of which it is.
+    """
+    if evaluation not in EVALUATIONS:
+        raise ValueError(f"unknown evaluation {evaluation!r}; expected one of {EVALUATIONS}")
     rows = _apply_cut(rows, cut)
     labeled = [r for r in rows if r.outcome is not None]
     y = np.array([r.outcome in POSITIVE for r in labeled])
     base = y.mean() if len(y) else float("nan")
     rng = np.random.default_rng(seed)
     names = sorted({k for r in labeled for k in r.first_fired})
+    at_freeze = evaluation == "at_freeze"
     out = []
     for n in names:
-        f = np.array([r.first_fired.get(n) is not None for r in labeled])
+        f = np.array([bool(r.fired_at_freeze.get(n)) if at_freeze else (r.first_fired.get(n) is not None)
+                      for r in labeled])
         fired, tp = int(f.sum()), int((f & y).sum())
         prec = tp / fired if fired else float("nan")
         rec = tp / int(y.sum()) if y.sum() else float("nan")
         lift = prec / base if fired and base else float("nan")
-        leads = [_lead_weeks(r.first_fired[n], milestones_by_id[r.milestone_id]) for r in labeled if r.first_fired.get(n)]
+        # Lead is undefined at a fixed evaluation point: it is zero for every firing by
+        # construction, and reporting it would invite comparison against first-fired leads.
+        leads = ([] if at_freeze else
+                 [_lead_weeks(r.first_fired[n], milestones_by_id[r.milestone_id]) for r in labeled if r.first_fired.get(n)])
         med = float(np.median(leads)) if leads else float("nan")
         q1, q3 = (float(np.percentile(leads, 25)), float(np.percentile(leads, 75))) if leads else (float("nan"),) * 2
         boots_p, boots_l = [], []
@@ -71,6 +93,7 @@ def signal_metrics(rows: list[Row], milestones_by_id: dict[str, Milestone], L: i
                     "lead_class": ("risk" if med >= L else "status") if leads else "n/a",
                     "precision_ci_lo": plo, "precision_ci_hi": phi, "lift_ci_lo": llo, "lift_ci_hi": lhi})
     df = pd.DataFrame(out)
+    df.insert(0, "eval", evaluation)
     df.insert(0, "cut", cut)
     return df
 

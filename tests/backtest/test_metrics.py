@@ -1,3 +1,4 @@
+import pandas as pd
 from datetime import date, datetime, timezone
 from backtest.run import Row
 from backtest.metrics import signal_metrics, by_org, by_stage, rows_frame
@@ -105,3 +106,34 @@ def test_by_stage_excludes_unlabeled_rows():
 def test_by_stage_empty_input_keeps_schema():
     df = by_stage([])
     assert list(df.columns) == ["cut", "stage", "rows", "slips", "slip_rate"]
+
+
+# --- evaluation mode: first-fired vs at-freeze ---
+
+def _mode_rows():
+    """`s` fired early on i1 but is no longer firing at the freeze; on i2 it fires at the
+    freeze. Under first-fired both count; under at-freeze only i2 does."""
+    return [Row("i1", "alpha", M.id, None, "shipped", {"s": T(5, 1)}, {"s": False}),
+            Row("i2", "alpha", M.id, None, "slipped", {"s": T(5, 1)}, {"s": True}),
+            Row("i3", "alpha", M.id, None, "shipped", {"s": None}, {"s": False})]
+
+def test_first_fired_is_the_default_mode():
+    df = signal_metrics(_mode_rows(), MS, L=4, n_boot=0).set_index("signal")
+    assert df.loc["s", "fired"] == 2 and df.loc["s", "precision"] == 0.5
+    assert df.loc["s", "eval"] == "first_fired"
+
+def test_at_freeze_mode_scores_only_what_is_firing_at_the_decision_point():
+    df = signal_metrics(_mode_rows(), MS, L=4, n_boot=0, evaluation="at_freeze").set_index("signal")
+    assert df.loc["s", "fired"] == 1 and df.loc["s", "precision"] == 1.0
+    assert df.loc["s", "eval"] == "at_freeze"
+
+def test_at_freeze_reports_no_lead_time():
+    """Lead is meaningless at a fixed evaluation point -- it is zero for every firing by
+    construction. Reporting it would invite comparison against first-fired leads."""
+    df = signal_metrics(_mode_rows(), MS, L=4, n_boot=0, evaluation="at_freeze").set_index("signal")
+    assert pd.isna(df.loc["s", "median_lead_weeks"]) and df.loc["s", "lead_class"] == "n/a"
+
+def test_unknown_evaluation_mode_is_rejected():
+    import pytest as _p
+    with _p.raises(ValueError):
+        signal_metrics(_mode_rows(), MS, L=4, n_boot=0, evaluation="whenever")
