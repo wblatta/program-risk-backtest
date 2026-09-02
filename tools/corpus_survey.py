@@ -120,11 +120,23 @@ def survey_repo(client: Client, repo: str, timeline_sample: int = 10) -> dict:
     row["milestones"] = len(ms)
     row["dated_ms"] = sum(1 for m in ms if m.get("due_on"))
 
+    # Coverage from a general sample. PRs are excluded: a busy repo's recent page is
+    # mostly pull requests, and counting them collapses the ratio toward zero.
     issues, _ = client.get(f"{API}/repos/{repo}/issues?state=all&per_page=100&sort=updated")
     issues = [i for i in (issues or []) if "pull_request" not in i]
     row["issues_sampled"] = len(issues)
-    milestoned = [i for i in issues if i.get("milestone")]
-    row["milestone_cov"] = len(milestoned) / len(issues) if issues else 0.0
+    row["milestone_cov"] = (sum(1 for i in issues if i.get("milestone")) / len(issues)
+                            if issues else 0.0)
+
+    # Retargeting is measured on issues that ACTUALLY CARRY a milestone, fetched with
+    # `milestone=*`. Reusing the recent sample was wrong: `sort=updated` skews to new and
+    # untriaged issues, so a project that milestones its planned work heavily can still
+    # show zero milestoned issues on a recent page -- which is how the first run of this
+    # survey rejected repos holding 39 dated release milestones.
+    milestoned, _ = client.get(
+        f"{API}/repos/{repo}/issues?state=all&per_page=100&sort=updated&milestone=*")
+    milestoned = [i for i in (milestoned or []) if "pull_request" not in i and i.get("milestone")]
+    row["milestoned_found"] = len(milestoned)
 
     fams = label_families(issues)
     row["org_families"] = ",".join(k for k, _ in fams.most_common(20) if k in ORG_PREFIXES) or ""
@@ -151,17 +163,27 @@ def verdict(row: dict) -> str:
     if row.get("error"):
         return "unreadable"
     if not row.get("timelines_checked"):
-        return "no milestoned issues to sample"
+        return ("no milestoned issues anywhere" if not row.get("milestoned_found")
+                else "milestoned issues found but timelines unreadable")
     rt = row.get("retarget_rate") or 0.0
     if rt == 0:
         return "REJECT — no retargeting observed, so no positive class"
-    if row.get("milestone_cov", 0) < 0.25:
-        return "weak — milestones exist but are rarely applied"
+    notes = []
     if not row.get("dated_ms"):
-        return "weak — no release calendar (milestones lack due dates)"
+        # NOT a downgrade. Kubernetes' own calendar is built from the sig-release repo into
+        # adapters/k8s/calendar.yaml, not read from GitHub milestones -- so a candidate
+        # with a documented public release schedule can supply one the same way. Scoring
+        # this as disqualifying rejected golang/go, which has 51k milestoned issues and a
+        # more regular release cadence than Kubernetes.
+        notes.append("calendar needed from outside GitHub")
+    if not row.get("org_families"):
+        notes.append("no org units, so cross_org and org_overcommitted cannot run")
     if not row.get("scope_labels"):
-        return "viable — but no scope-label analogue, so no S0 control"
-    return "STRONG — retargets, calendar, coverage and a scope label"
+        notes.append("no scope label, so no S0 control")
+    if row.get("milestoned_found", 0) < 20:
+        notes.append("thin milestoned population")
+    grade = "STRONG" if not notes else ("viable" if len(notes) < 3 else "weak")
+    return grade + (" — " + "; ".join(notes) if notes else " — retargets, calendar, org units and a scope label")
 
 
 def main(argv=None) -> int:
@@ -181,11 +203,13 @@ def main(argv=None) -> int:
         row = survey_repo(client, repo, args.timelines)
         rows.append(row)
         rt = row.get("retarget_rate")
-        print(f"  {repo:44s} cov={row.get('milestone_cov') or 0:.2f} "
+        print(f"  {repo:40s} cov={row.get('milestone_cov') or 0:.2f} "
+              f"ms={row.get('milestoned_found', 0):>3d} "
               f"retarget={'--' if rt is None else f'{rt:.2f}'}  {row.get('verdict')}", file=sys.stderr)
 
     cols = ["repo", "stars", "milestones", "dated_ms", "issues_sampled", "milestone_cov",
-            "timelines_checked", "retarget_rate", "org_families", "scope_labels", "verdict", "error"]
+            "milestoned_found", "timelines_checked", "retarget_rate", "org_families",
+            "scope_labels", "verdict", "error"]
     import pathlib
     out = pathlib.Path(args.out); out.parent.mkdir(parents=True, exist_ok=True)
     with out.open("w", newline="") as f:
