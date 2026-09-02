@@ -106,6 +106,32 @@ def cmd_backtest(args) -> None:
 
 
 
+def cmd_sensitivity(args) -> None:
+    """Spec §8's grid: vary each a priori parameter, report, do not tune on it."""
+    from adapters.k8s.config import CONFIG
+    from backtest.run import run_backtest
+    from backtest.sensitivity import DEFAULT_GRID, sweep
+    from core.store import Store
+    from signals import SIGNALS
+    from signals.base import DEFAULT_PARAMS
+    s = Store(CACHE / "store.sqlite")
+    ms, orgs, evs = s.load_milestones("k8s"), s.load_org_units("k8s"), s.load_events("k8s")
+    if args.min_minor:
+        ms = [m for m in ms if m.ordinal >= args.min_minor or not m.is_scheduled]
+    by_id = {m.id: m for m in ms}
+    runner = lambda params: run_backtest(evs, ms, orgs, CONFIG, SIGNALS, params)
+    out = OUT / "k8s"; out.mkdir(parents=True, exist_ok=True)
+    frames = []
+    for cut in ("evidenced", "full"):
+        df = sweep(runner, by_id, dict(DEFAULT_PARAMS), DEFAULT_GRID, cut=cut)
+        frames.append(df)
+        print(f"\n--- {cut} cut ---")
+        print(df.to_string(index=False, float_format=lambda x: f"{x:.3f}"))
+    import pandas as pd
+    pd.concat(frames).to_csv(out / "sensitivity.csv", index=False)
+    print(f"\nwrote {out / 'sensitivity.csv'}")
+
+
 def cmd_fetch_issues(args) -> None:
     """Fetch KEP tracking issues + label timelines into cache/k8s/github/.
 
@@ -164,6 +190,9 @@ def main(argv=None) -> None:
     fi.add_argument("--reserve", type=int, default=50, help="stop with this much budget left")
     fi.add_argument("--allow-unauthenticated", action="store_true")
     fi.set_defaults(fn=cmd_fetch_issues)
+    sp = sub.add_parser("sensitivity")
+    sp.add_argument("--min-minor", type=int, default=0)
+    sp.set_defaults(fn=cmd_sensitivity)
     bp = sub.add_parser("backtest")
     # Default 0 = every scheduled milestone (v1.19-v1.37), which is what the committed
     # out/k8s/*.csv were produced from -- a bare `cli.py backtest` must reproduce them.
