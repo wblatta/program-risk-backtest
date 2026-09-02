@@ -61,6 +61,7 @@ class GitHubClient:
         self.reset_at: datetime | None = None
         self.requests_made = 0
         self.not_modified = 0
+        self._last_headers: dict[str, str] | None = None
 
     def _headers(self, url: str) -> dict[str, str]:
         h = {"Accept": "application/vnd.github+json", "User-Agent": USER_AGENT,
@@ -85,18 +86,19 @@ class GitHubClient:
             except (ValueError, OSError):
                 pass
 
-    def get_json(self, url: str):
-        """GET `url`, returning parsed JSON. Raises RateLimitError rather than
-        spending the budget below the reserve. A 304 returns the cached body."""
+    def _get_one(self, url: str):
+        """GET a single URL. Raises RateLimitError rather than spending the budget
+        below the reserve. A 304 returns the cached body."""
         if self.remaining is not None and self.remaining <= self._reserve:
             raise RateLimitError(
                 f"budget at {self.remaining}, reserve is {self._reserve}; "
                 f"resets at {self.reset_at.isoformat() if self.reset_at else 'unknown'}",
                 self.reset_at)
 
-        for _ in range(self._max_retries):
+        for attempt in range(self._max_retries):
             status, headers, body = self._transport(url, self._headers(url))
             self.requests_made += 1
+            self._last_headers = headers
             self._note_limits(headers)
 
             if status == 304:
@@ -112,7 +114,7 @@ class GitHubClient:
                     f"{status} from {url} with no Retry-After: {body[:200]!r}", self.reset_at)
 
             if status >= 500:
-                self._sleep(2 ** self.requests_made)
+                self._sleep(2 ** attempt)
                 continue
 
             if status >= 400:
@@ -125,3 +127,41 @@ class GitHubClient:
             return parsed
 
         raise RuntimeError(f"gave up on {url} after {self._max_retries} attempts")
+
+    def get_json(self, url: str):
+        """GET `url`, following `Link: rel="next"` when the response is a JSON list.
+
+        GitHub paginates list endpoints at 100 items. The timeline endpoint in
+        particular runs oldest-first, so stopping at page 1 silently discards the
+        MOST RECENT history -- and long-lived KEPs are the worst affected. Measured
+        before this was fixed: 475 of 644 cached timelines held exactly 100 entries,
+        and page 1 covered a median of 36% of an issue's lifetime, as little as 1.8%
+        for the longest-lived. Everything after the cutoff was invisible to the
+        evidence rule, which then reported those rows as having no paper trail.
+
+        Only list responses are followed; a single object (an issue) has no next page.
+        """
+        first = self._get_one(url)
+        if not isinstance(first, list):
+            return first
+        out = list(first)
+        while (nxt := self._next_link(self._last_headers)):
+            page = self._get_one(nxt)
+            if not isinstance(page, list):
+                break
+            out.extend(page)
+        return out
+
+    @staticmethod
+    def _next_link(headers: dict[str, str] | None) -> str | None:
+        """Parse `Link: <url>; rel="next"` -- the pagination cursor GitHub returns."""
+        link = (headers or {}).get("Link") or (headers or {}).get("link")
+        if not link:
+            return None
+        for part in link.split(","):
+            bits = part.split(";")
+            if len(bits) < 2:
+                continue
+            if 'rel="next"' in "".join(bits[1:]).replace(" ", "").replace("'", '"'):
+                return bits[0].strip().strip("<>")
+        return None
