@@ -6,13 +6,25 @@ This project answers that question with a measurement instead of an opinion. It 
 
 The answer, on 1,255 committed deliverables across six years:
 
-**Silence predicts slippage about as well as the release team's own label does, and the two find different failures — together they flag 7% of committed work with 92% precision, eight weeks before the deadline.** Then, partway through the corpus, the project stopped applying that label. The conjunction disappeared with it. The activity signal kept working unchanged.
+**An enhancement nobody has touched in eight weeks slips 2.3x more often than the base rate — and three signals now beat the release team's own scope label at the moment the commitment locks.** The best of them flags 17% of committed work at 89% precision. A second, checking whether the required approval gate has anyone attached to it, reaches 40% recall at 74% precision.
+
+Then the release team's tracking label went unapplied for four consecutive cycles. The signals that read what people *did* got stronger through that period. The one that read what people *recorded* got weaker.
 
 > Broken process hygiene is not only a risk signal in itself. It destroys the signals that depend on hygiene — exactly when you most need something that does not.
 
-Two of the four signals failed, and are reported as failures. **[`docs/findings.md`](docs/findings.md) is the full conclusion**, including what these numbers cannot support and the four errors this project made and corrected before arriving at them.
+Ten signals were tested. Four carry real information, four are indistinguishable from noise, one is significantly *negative*, and one pair could not be tested at all — each reported. **[`docs/findings.md`](docs/findings.md) is the full conclusion**, including verdicts on all three hypotheses and the six things this project got wrong before arriving at them.
 
----
+## The three hypotheses, tested
+
+The spec committed to three hypotheses before any code existed, and to reporting a verdict on each — *"including the one that fails."* All three now have one.
+
+| | hypothesis | verdict |
+|---|---|---|
+| **H1** | items whose **listed owners** are inactive slip more | **Half right, wrong mechanism.** Silence predicts strongly (lift 2.259). Narrowing to the *listed owners* makes it significantly worse (1.787). What predicts is that the work is untouched, not that the owner is absent — owners delegate, and the named author is often not the person implementing. |
+| **H2** | a stale dependency is a leading indicator | **Untestable on this corpus.** Both dependency signals are null on 21 and 62 firings. Only 18% of KEP READMEs reference a sibling at all, and those references carry no relation type. You cannot test a dependency hypothesis against a source that does not record dependencies. |
+| **H3** | signals separate by lead time into actionable vs too-late | **Supported, but mostly definitional.** They do separate, and the second-best signal lands on the too-late side. But its lead is capped by its own window parameter: widen that window from 4 weeks to 6 and it becomes actionable *and* stays predictive (lift 1.694). The lead was a parameter choice, not a property of the failure. |
+
+H1's verdict was invisible for two sprints. Git author emails do not map to GitHub handles, so the signal named `hollow_owner` was in fact measuring anonymous silence — the tracking-issue timelines, and 47,573 activity events from 2,147 named people, are what made the stated hypothesis answerable at all.
 
 ## The problem
 
@@ -70,27 +82,34 @@ Those tests place their fixtures at the *exact* boundary second and were each ve
 
 **[`docs/findings.md`](docs/findings.md) is the conclusion.** What follows is the summary.
 
-Four signals were tested against 1,255 committed deliverables across 19 release cycles. One works, one is backwards, one is null, and the fourth is the project's own status label included as a control. Results are published under two cuts — `evidenced` (only rows whose outcome can be verified) and `full` (all rows, unknowns counted as not-delivered) — because 23% of outcomes cannot be confirmed from the corpus. Compare the lift column across cuts and nothing else; the base rates differ.
+Ten signals were tested against 1,255 committed deliverables across 19 release cycles. Results are published under two cuts — `evidenced` (only rows whose outcome can be verified) and `full` (all rows, unknowns counted as not-delivered), because 23% of outcomes cannot be confirmed — and at two evaluation points: `first_fired` during the cycle, and `at_freeze` when the commitment locks. Compare the lift column within a cut and evaluation point, never across; the base rates differ and so do the questions.
 
-**Evaluated at the enhancements freeze, evidenced cut** (n=965, base rate 0.393):
+**At the enhancements freeze, evidenced cut** (n=965, base rate 0.393):
 
-| signal | what it looks for | fires | precision | **lift** | 95% CI |
-|---|---|---|---|---|---|
-| `hollow_owner` | nobody has touched it in N weeks | 160 | 0.856 | **2.18** | 2.01 – 2.37 |
-| `tracked/no` | the release team says it is out of scope | 116 | 0.767 | **1.95** | 1.75 – 2.17 |
-| **both together** | | 72 | **0.917** | **2.33** | 2.12 – 2.57 |
+| signal | what it looks for | fires | precision | recall | **lift** | 95% CI |
+|---|---|---|---|---|---|---|
+| `item_silent` | nobody has touched it in 8 weeks | 71 | 0.887 | 0.166 | **2.259** | 2.02 – 2.49 |
+| `gate_unassigned` | the required approval gate has no holder | 205 | 0.741 | 0.401 | **1.888** | 1.73 – 2.06 |
+| `hollow_owner` | no *listed owner* has touched it | 181 | 0.702 | 0.335 | **1.787** | 1.62 – 1.96 |
+| `process_tracked` | **the control** — the team's own scope label | 344 | 0.622 | 0.565 | **1.584** | 1.48 – 1.70 |
+| `prior_slip` | it has been retargeted before | 371 | 0.418 | 0.409 | 1.064 | 0.96 – 1.17 |
+| `org_overcommitted` | the org committed past its best-ever cycle | 701 | 0.411 | 0.760 | 1.046 | 1.00 – 1.10 |
+| `cross_org` | more than one org is involved | 436 | 0.406 | 0.467 | 1.034 | 0.94 – 1.12 |
+| `dep_inactive` | something it depends on has gone quiet | 62 | 0.371 | 0.061 | 0.945 | 0.63 – 1.26 |
+| `late_target` | committed close to the freeze | 608 | 0.309 | 0.496 | **0.787** | 0.72 – 0.85 |
+| `dep_ordering_conflict` | a dependency lands no earlier than this | 21 | 0.238 | 0.013 | 0.606 | 0.17 – 1.09 |
 
-**Silence is a real predictor, and it is the durable one.** `hollow_owner` is significant on both cuts and never falls below the base rate in any cycle.
+The ordering is identical across both cuts and both evaluation points.
 
-**The project's own label is just as good — while it is maintained.** On the evidenced cut our signal is significantly ahead; on the full cut the difference vanishes. Neither dominates.
+**Silence is the strongest predictor, and it beats the organisation's own judgment.** Three signals clear the `process_tracked` control, the bar sprint 1 set: *a signal that cannot beat the project's own status field is not worth reporting.* An earlier draft of this README reported the human label as comparable to the best signal; that was measured before real actor data existed and against a different form of the label, and it no longer holds.
 
-**Together they are much better than either.** They overlap on only 39% of firings and the conjunction beats both, significantly, on both cuts: 92% precision on 7% of the corpus, eight weeks before the deadline.
+**`gate_unassigned` is the one you would actually deploy.** `item_silent` is more precise but flags a sixth of the work; the gate check reaches 40% recall at 74% precision, and the [sensitivity grid](out/k8s/sensitivity.csv) shows that running it six weeks out instead of four keeps it predictive (lift 1.694) while making it early enough to act on.
 
-**And then the label was abandoned.** After v1.27 the release team stopped applying `tracked/no` by the freeze — from 4–20 firings per cycle to 1. The conjunction does not exist in any recent cycle. `hollow_owner` in the same period held at 0.846 precision and *rose* to lift 2.52.
+**And then the label was abandoned.** In v1.28 through v1.31 the release team applied `tracked/yes` to no row at all, before partially resuming. Across that break every activity-derived signal got *stronger* — `item_silent` from lift 1.860 to 2.398, `gate_unassigned` from 1.547 to 2.247 — while the label-derived control declined from 1.239 to 1.161.
 
 > Broken process hygiene is not only a risk signal in itself. It destroys the signals that depend on hygiene — exactly when you most need something that does not.
 
-**Two signals did not work, reported because a study that only surfaces its successes is not a study.** `prior_slip` ("it slipped before") is indistinguishable from no effect under both cuts. `late_target` is *negatively* predictive with its whole interval below 1.0 — work committed close to the freeze slipped **less**, most plausibly because a team committing late commits with better information.
+**Half the signals did not work, reported because a study that only surfaces its successes is not a study.** `prior_slip`, `cross_org` and `org_overcommitted` are indistinguishable from noise. Both dependency signals are null on too few firings to decide anything. And `late_target` is *negatively* predictive with its whole interval below 1.0 at every parameter value tested — work committed close to the freeze slipped **less**, most plausibly because a team committing late commits with better information.
 
 ## What these numbers cannot support
 
