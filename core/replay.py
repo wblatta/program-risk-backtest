@@ -17,6 +17,7 @@ class ItemState:
     owners: dict[str, set[str]] = field(default_factory=dict)
     deps: set[str] = field(default_factory=set)
     last_activity: dict[str, datetime] = field(default_factory=dict)
+    labels: set[str] = field(default_factory=set)   # tracking-issue labels in force at as_of
 
     @property
     def last_activity_any(self) -> datetime | None:
@@ -66,6 +67,12 @@ def snapshot(events: Iterable[Event], as_of: datetime, *, presorted: bool = Fals
             (bucket.add if p["op"] == "add" else bucket.discard)(p["subject_id"])
         elif e.kind == K.DEPENDENCY_CHANGED:
             (s.deps.add if p["op"] == "add" else s.deps.discard)(p["depends_on_id"])
+        elif e.kind == K.LABEL_CHANGED:
+            # Tracking-issue labels, replayed like everything else so a signal reading
+            # them sees only what was applied by as_of. Reading today's labels instead
+            # would leak the future: they are the release team's final word, not their
+            # view during the cycle.
+            (s.labels.add if p["op"] == "add" else s.labels.discard)(p["label"])
         elif e.kind == K.ACTIVITY:
             actor = p["actor_id"]
             if actor not in s.last_activity or s.last_activity[actor] < e.ts:

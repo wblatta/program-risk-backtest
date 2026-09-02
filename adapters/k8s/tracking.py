@@ -142,3 +142,21 @@ def fetch_tracking(cache_dir, numbers, client, repo: str = REPO):
         tp.write_text(_json.dumps(timeline))
         records[n] = {"issue": issue, "timeline": timeline}
     return records, False
+
+
+def label_events(item_id: str, timeline) -> list["Event"]:
+    """Timestamped tracking-label changes as core events, so `snapshot()` can replay them.
+
+    Only `tracked/*` and `stage/*` are emitted. The rest of the vocabulary
+    (`lifecycle/*`, `sig/*`, `kind/*`) is either noise for this purpose or already
+    carried by other events, and every extra label multiplies the event stream without
+    adding signal.
+    """
+    from core.model import Event, EventKind as K
+    out = []
+    for e in parse_timeline(timeline):
+        if not (e.label.startswith("tracked/") or e.label.startswith("stage/")):
+            continue
+        out.append(Event(e.ts, item_id, K.LABEL_CHANGED,
+                         {"label": e.label, "op": e.op}, "tracking-issue"))
+    return out
