@@ -18,6 +18,11 @@ class ItemState:
     deps: set[str] = field(default_factory=set)
     last_activity: dict[str, datetime] = field(default_factory=dict)
     labels: set[str] = field(default_factory=set)   # tracking-issue labels in force at as_of
+    # role -> stage -> subjects, for roles granted per stage rather than per item.
+    # `owners` keeps the item-wide union; this keeps the stages apart. K8s grants PRR
+    # approval per stage, so an approver on `alpha` is no evidence about `beta` -- and
+    # the union cannot tell you which stage is actually covered.
+    stage_owners: dict[str, dict[str, set[str]]] = field(default_factory=dict)
 
     @property
     def last_activity_any(self) -> datetime | None:
@@ -65,6 +70,13 @@ def snapshot(events: Iterable[Event], as_of: datetime, *, presorted: bool = Fals
             # (ownership reads as absent, so risk signals fire) and is pinned by the test suite.
             bucket = s.owners.setdefault(p["role"], set())
             (bucket.add if p["op"] == "add" else bucket.discard)(p["subject_id"])
+            # Only stage-scoped grants enter stage_owners. An item-wide role (`owning`,
+            # `author`) carries no stage, and inventing one would make every stage look
+            # covered because the item was.
+            stage = p.get("stage")
+            if stage:
+                sb = s.stage_owners.setdefault(p["role"], {}).setdefault(stage, set())
+                (sb.add if p["op"] == "add" else sb.discard)(p["subject_id"])
         elif e.kind == K.DEPENDENCY_CHANGED:
             (s.deps.add if p["op"] == "add" else s.deps.discard)(p["depends_on_id"])
         elif e.kind == K.LABEL_CHANGED:

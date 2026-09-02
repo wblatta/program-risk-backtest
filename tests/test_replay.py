@@ -108,3 +108,32 @@ def test_target_clear_then_re_add():
     assert s.targets["beta"] == "k8s:v1.32"
     assert s.target_set_at["beta"] == T(3)
     assert s.target_history["beta"] == ["k8s:v1.31", "k8s:v1.32"]
+
+
+# --- per-stage role holders (unblocks S2 gate_unassigned) ---
+
+def test_stage_scoped_owner_events_are_recorded_per_stage():
+    """PRR approval is granted per stage, so an approver on `alpha` says nothing about
+    `beta`. `owners` unions them item-wide; `stage_owners` keeps them apart."""
+    evs = [ev(T(1), K.OWNER_CHANGED, {"subject_id": "k8s:p-a", "role": "prr_approver", "op": "add", "stage": "alpha"}),
+           ev(T(2), K.OWNER_CHANGED, {"subject_id": "k8s:p-b", "role": "prr_approver", "op": "add", "stage": "beta"})]
+    s = snapshot(evs, T(3))["k8s:kep-1"]
+    assert s.stage_owners["prr_approver"]["alpha"] == {"k8s:p-a"}
+    assert s.stage_owners["prr_approver"]["beta"] == {"k8s:p-b"}
+    assert s.owners["prr_approver"] == {"k8s:p-a", "k8s:p-b"}   # item-wide view unchanged
+
+def test_stage_scoped_owner_removal_clears_only_that_stage():
+    evs = [ev(T(1), K.OWNER_CHANGED, {"subject_id": "k8s:p-a", "role": "prr_approver", "op": "add", "stage": "alpha"}),
+           ev(T(2), K.OWNER_CHANGED, {"subject_id": "k8s:p-b", "role": "prr_approver", "op": "add", "stage": "beta"}),
+           ev(T(3), K.OWNER_CHANGED, {"subject_id": "k8s:p-a", "role": "prr_approver", "op": "remove", "stage": "alpha"})]
+    s = snapshot(evs, T(4))["k8s:kep-1"]
+    assert s.stage_owners["prr_approver"]["alpha"] == set()
+    assert s.stage_owners["prr_approver"]["beta"] == {"k8s:p-b"}
+
+def test_owner_events_without_a_stage_do_not_enter_stage_owners():
+    """`owning`/`author` are item-wide roles and carry no stage. Inventing one would
+    make a stage look covered because some other stage was."""
+    evs = [ev(T(1), K.OWNER_CHANGED, {"subject_id": "k8s:sig-node", "role": "owning", "op": "add"})]
+    s = snapshot(evs, T(2))["k8s:kep-1"]
+    assert s.owners["owning"] == {"k8s:sig-node"}
+    assert "owning" not in s.stage_owners
