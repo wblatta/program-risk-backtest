@@ -122,8 +122,9 @@ wrong, and the sign is the interesting part.
   designed metric is first-fired; four evaluation points were compared and the one
   favouring our signal was reported. Treat the specific lift values as suggestive. The
   complementarity result in §3 and the era result in §4 do not depend on that choice.
-- **No learned model was tested.** All signals are hand-written deterministic rules. This
-  study says nothing about whether an ML model would do better; it was never tried.
+- **No learned model was tested.** All signals are hand-written deterministic rules, and
+  this study says nothing about whether a model would do better. That was a design
+  decision, not an omission — see below.
 - **290 rows (23%) remain `unresolved`** — outcome unknown to the instrument. 105 of them
   carry a `kep.yaml` self-report claiming delivery, so the residual is not simply stalled
   work; it is work whose paper trail cannot be followed.
@@ -132,6 +133,71 @@ wrong, and the sign is the interesting part.
   one.
 - **Recall is low throughout.** The best instrument here flags a sixth of committed work.
   Most slippage is not caught by any of these signals.
+
+## On models, and why there isn't one
+
+This project is often assumed to be about inferring risk with a model over structured
+inputs. It is worth being exact about what was scoped, because the answer is more
+interesting than "we didn't get to it."
+
+The original design ([spec §7](superpowers/specs/2026-08-26-program-risk-backtest-design.md))
+drew the line explicitly, before any code existed:
+
+> Not signals, by design: anything read from prose except dependencies. No sentiment, no
+> "LLM thinks this is risky" — uncalibratable.
+
+LLMs *were* in scope — the spec defines `source = llm`, a confidence field on
+LLM-sourced events, and an SHA-256-keyed LLM cache committed to the repo so results
+reproduce. Their job was **extraction, not prediction**: read unstructured KEP prose and
+emit `dependency_changed` events with a confidence score, so that deterministic signals
+could then run over a richer event stream. That was sprint 3. It was never reached.
+
+So the distinction the design turns on is:
+
+| | role | status |
+|---|---|---|
+| **LLM as extractor** | "this README says KEP-1234 blocks this one" → a typed event with confidence | in scope, deferred, never built |
+| **LLM as predictor** | "this KEP looks risky to me" → a score | excluded by design, as uncalibratable |
+
+### Why the exclusion looks right in hindsight
+
+The spec asserted this; running the backtest supplied the evidence.
+
+**Auditability is what caught the errors.** Every conclusion in this document was wrong at
+least once. Each was found by tracing a specific claim to specific rows: 475 timelines
+truncated at exactly 100 entries; 22 rows whose closure predated their cycle; 195 rows
+whose merged PRs fell outside an arbitrary window. That kind of tracing is possible
+because a signal firing means one inspectable fact — "no commit touched this directory
+between these two dates." A model produces a score. When it is wrong, and ours were
+repeatedly wrong, there is nothing to trace.
+
+**The data would not support training.** 1,255 rows, 379 positives, a handful of
+features. The labels themselves carry a measured floor of ~8.5% known error, and 23% of
+outcomes cannot be verified at all. A model fit to labels that noisy, at that scale,
+would most likely learn the noise — and the calibration check would use the same
+corrupted labels, so nothing would reveal it. The two label defects found here moved the
+headline conclusion twice; a model trained before they were found would have encoded them
+invisibly.
+
+**The result that survived is not one a model would improve.** `hollow_owner` at the
+freeze is a 17%-recall, 86%-precision instrument. Its value is that it is *specific*: a
+short list, mostly right, early. The failure mode a model would help with — squeezing
+more discrimination out of weak features — is not this project's bottleneck. Coverage is,
+and coverage is limited by what the artifacts record, not by how cleverly they are
+combined.
+
+### The version of this worth building
+
+Not a risk classifier. The extraction path the spec queued: use a model to turn prose
+into more structure — dependency edges, ownership changes described in text, scope
+changes announced in comments — and then run the same auditable rules over the richer
+stream. That plays to what models are good at (reading unstructured text) while keeping
+the prediction step inspectable, and it attacks coverage, which is the actual weakness.
+
+If someone does want to test a learned model on the prediction step, the honest way to do
+it is against the labels this project ended with rather than the ones it started with,
+with the ~8.5% floor error and the 23% unresolved bucket stated up front. That comparison
+would be worth reading. It has not been run.
 
 ## What we got wrong along the way
 
@@ -155,7 +221,11 @@ one success criterion the plan skipped — found (2) on its first execution.
 
 ## If someone continues this
 
-- **Test a learned model.** The obvious gap. Everything here is hand-specified.
+- **Build the extraction path, not a risk classifier.** Sprint 3's scoped work: use a
+  model to turn prose into structure — dependency edges, ownership changes, scope changes
+  announced in comments — then run the same auditable rules over the richer stream. That
+  attacks coverage, which is the real weakness, and keeps the prediction step
+  inspectable. See "On models, and why there isn't one" above.
 - **Build the remaining spec'd signals** — five of eight are untried, and `cross_org` and
   `org_overcommitted` are structural rather than activity-based, so they are not
   obviously correlated with what has been measured.
