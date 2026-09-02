@@ -60,27 +60,27 @@ Those tests place their fixtures at the *exact* boundary second and were each ve
 
 ## Results
 
-A row is only scored `shipped` when there is positive evidence the code landed — the tracking issue closed inside the milestone's window, or a `kubernetes/kubernetes` PR cross-referenced from it merged during the cycle. Rows with neither are labelled `unresolved`, meaning *unknown to this instrument*, not *failed*. That splits the corpus in two, so the results are published as two cuts.
+A row is only scored `shipped` when there is positive evidence the code landed — the tracking issue closed inside the milestone's window, or a `kubernetes/kubernetes` PR **milestoned for that release** was merged. Rows with neither are labelled `unresolved`, meaning *unknown to this instrument*, not *failed*. That splits the corpus in two, so the results are published as two cuts.
 
-The headline table is the **evidenced cut**: the 774 rows whose outcome is known — either delivery evidence says it landed, or a recorded retarget, drop, or exception says it did not. Base rate 49.0% — a signal is useful if it beats that. Confidence intervals are bootstrapped (n=1000).
+The headline table is the **evidenced cut**: the 965 rows whose outcome is known — either delivery evidence says it landed, or a recorded retarget, drop, or exception says it did not. Base rate 39.3% — a signal is useful if it beats that. Confidence intervals are bootstrapped (n=1000).
 
-**Evidenced cut** — 774 rows, base rate 0.490:
+**Evidenced cut** — 965 rows, base rate 0.393:
 
 | signal | what it looks for | fires on | precision | **lift** | 95% CI | median lead |
 |---|---|---|---|---|---|---|
-| `hollow_owner` | no activity from anyone in N weeks | 304 rows | 68.1% | **1.39** | 1.30 – 1.49 | 8.4 weeks |
-| `prior_slip` | this item has been retargeted before | 276 rows | 57.6% | **1.18** | 1.08 – 1.28 | 7.3 weeks |
-| `late_target` | committed close to the freeze | 482 rows | 39.6% | **0.81** | 0.75 – 0.86 | 4.6 weeks |
+| `hollow_owner` | no activity from anyone in N weeks | 367 rows | 56.4% | **1.44** | 1.33 – 1.55 | 8.4 weeks |
+| `prior_slip` | this item has been retargeted before | 375 rows | 42.4% | 1.08 | 0.98 – 1.17 | 7.3 weeks |
+| `late_target` | committed close to the freeze | 611 rows | 31.3% | **0.80** | 0.73 – 0.86 | 5.3 weeks |
 
-**`hollow_owner` works.** Silence is the strongest available predictor of a missed commitment — 39% more likely to slip than the base rate, with the confidence interval clear of 1.0, and it says so a median of **8.4 weeks before the deadline**. That is a full sprint and a half of warning, from a signal that requires nobody to fill in a status field.
+**`hollow_owner` works.** Silence is the strongest available predictor of a missed commitment — 44% more likely to slip than the base rate, with the confidence interval clear of 1.0, and it says so a median of **8.4 weeks before the deadline**. That is a full sprint and a half of warning, from a signal that requires nobody to fill in a status field. It is also *stronger* on rows whose delivery can be verified than on the full sample (1.44 against 1.36).
 
-**`prior_slip` works here, and only here.** Its confidence interval clears 1.0 on the evidenced cut. On the full cut below it does not. See the paragraph after the second table — this is the single most interesting result in the study, and it is not a result about `prior_slip` so much as about what happens when you score a signal against outcomes you never verified.
+**`prior_slip` does not work.** Its confidence interval includes 1.0 under both cuts. "It slipped before, so it will slip again" is intuitive and this data does not support it.
 
-**`late_target` is backwards.** Its entire confidence interval sits *below* 1.0, under both cuts: work committed close to the freeze slipped **less** often, not more. The most plausible reading is selection — a team that commits late commits with better information, and the ones that were going to fail had already failed by then. Whatever the mechanism, the prior was wrong, and the sign is the interesting part.
+**`late_target` is backwards.** Its entire confidence interval sits *below* 1.0 under both cuts: work committed close to the freeze slipped **less** often, not more. The most plausible reading is selection — a team that commits late commits with better information, and the ones that were going to fail had already failed by then. Whatever the mechanism, the prior was wrong, and the sign is the interesting part.
 
 ### The full cut, and why both are published
 
-The other 481 rows have no delivery evidence. Discarding them would quietly assume they resemble the rows that do, so the same measurement is also run over all 1,255 rows with `unresolved` counted as non-positive — the closest thing to the pessimistic reading:
+The other 290 rows have no delivery evidence. Discarding them would quietly assume they resemble the rows that do, so the same measurement is also run over all 1,255 rows with `unresolved` counted as non-positive — the pessimistic reading:
 
 **Full cut** — 1,255 rows, base rate 0.302:
 
@@ -90,17 +90,17 @@ The other 481 rows have no delivery evidence. Discarding them would quietly assu
 | `prior_slip` | 482 rows | 33.0% | 1.09 | 0.997 – 1.21 | 7.3 weeks |
 | `late_target` | 772 rows | 24.7% | **0.82** | 0.75 – 0.88 | 5.3 weeks |
 
-**Compare the lift columns and nothing else.** The two cuts have very different base rates — 0.490 against 0.302 — because the 481 excluded rows were overwhelmingly shipped-side, so nearly half of what remains in the evidenced cut is a positive. Lift is normalised by the base rate and is comparable across cuts. **Precision is not.** `hollow_owner` reads 68.1% in one table and 41.0% in the other while behaving identically; what changed is the population it is scored against.
+**Compare the lift columns and nothing else.** The two cuts have different base rates — 0.393 against 0.302 — so precision is not comparable between them: `hollow_owner` reads 56.4% in one table and 41.0% in the other while behaving identically. Lift is normalised by base rate and is comparable. Recall is identical by construction, since dropping `unresolved` removes only non-positive rows.
 
-**And this is where `prior_slip` turns.** Its interval is [1.08, 1.28] on the evidenced cut and [0.997, 1.21] on the full one, which includes 1.0. Where the paper trail exists, "it slipped before" predicts; where it does not, the signal is indistinguishable from noise. Earlier runs of this project reported `prior_slip` as simply not significant, which is true of the full cut and false of the evidenced one. The narrow, honest statement: it clears 1.0 on rows with verified outcomes, fails on the full sample, and the two populations differ in a way that may itself be related to the outcome — the evidenced cut is not a random subsample, it is the subsample where somebody linked the work back to its tracking issue.
+The full cut is, by construction, the pre-evidence baseline: it counts every row, and `shipped` and `unresolved` are both non-positive, so it cannot see the evidence rule at all. The comparison is therefore "rows whose outcome can be verified" against "everything, assuming the worst about what we cannot see."
 
-Reporting the negative and the backwards result is the point. A study that only surfaces the signal that worked is not a study.
+Reporting the negative and the backwards result is the point. A study that only surfaces the signal that worked is not a study — and an earlier revision of this file did claim `prior_slip` was significant on the evidenced cut. It was, on data that turned out to be 6% of the timeline history. See [`docs/sprint-2-notes.md`](docs/sprint-2-notes.md) §3.
 
 ## What these numbers cannot support
 
-`unresolved` is 481 rows, **38% of the corpus** — the honest size of what this instrument cannot see. It is visible in the output rather than folded into `shipped`, which is what sprint 1's v1 rule did, but it is not the same thing as knowing those outcomes.
+`unresolved` is 290 rows, **23% of the corpus** — the honest size of what this instrument cannot see. It is visible in the output rather than folded into `shipped`, which is what sprint 1's v1 rule did, but it is not the same thing as knowing those outcomes. 105 of those 290 (36%) carry a `kep.yaml` self-report claiming delivery at exactly that milestone, so the residual is not simply work that stalled — it is work whose paper trail we cannot follow.
 
-Evidence coverage is uneven and the unevenness is structural. Only **306 of 644** enhancements have any merged cross-referenced PR at all. A tracking issue closes once, at the end of an enhancement's life, so closure is evidence about its final stage and merges about its first: coverage runs `stable` 54.2%, `alpha` 47.9%, and `beta` just **18.8%**, so `beta` rows are disproportionately excluded from the evidenced cut and any per-stage reading has to say so. Closure's attribution window is a heuristic, and a merged PR proves code landed — not that the feature shipped, since reverts, disabled feature gates and partial implementations are all invisible to it.
+Evidence coverage runs `stable` 72.9%, `alpha` 59.5%, `beta` 59.4%. An earlier revision reported `beta` at 18.8% and explained the gap as structural — closure being evidence about an enhancement's final stage and merges about its first. That was an artifact of a timeline fetch truncated at page 1; with complete data alpha and beta are within a point of each other and no stage effect survives. Closure's attribution window remains a heuristic, and a merged PR proves code milestoned for a release landed — not that the feature shipped, since reverts, disabled feature gates and partial implementations are all invisible to it.
 
 The rule is also checked against its predecessor and does not fully agree with it. Of the rows sprint 1 could prove wrong from the corpus itself, 60 are now `unresolved` and **nine are still `shipped`** — enhancements whose own `latest-milestone` never claims to have reached the release, sitting next to positive delivery evidence — seven a closed tracking issue, two a merged PR. Those nine are reported rather than patched away: an unmaintained metadata field alongside real delivery evidence reads better as *delivered with poor hygiene* than as *not delivered*, and poor hygiene is the phenomenon this project set out to measure. The reasoning is in [`docs/sprint-2-notes.md`](docs/sprint-2-notes.md).
 
@@ -137,8 +137,8 @@ Outputs land in [`out/k8s/`](out/k8s/): per-signal metrics and a by-team cut for
 
 | document | what it covers |
 |---|---|
-| [`docs/sprint-1-notes.md`](docs/sprint-1-notes.md) | The first run in full: results, per-release histogram, the manual audit, and an extended section on what the numbers cannot support |
-| [`docs/sprint-2-notes.md`](docs/sprint-2-notes.md) | The evidenced labeling rule, both cuts in full, why `prior_slip` changes verdict between them, and the nine known-error rows that survived |
+| [`docs/sprint-1-notes.md`](docs/sprint-1-notes.md) | The first run in full: results, per-release histogram, and an extended section on what the numbers cannot support. Its manual audit validated the *sprint-1* labels, which this rule replaced |
+| [`docs/sprint-2-notes.md`](docs/sprint-2-notes.md) | The evidenced labeling rule, both cuts in full, and two corrections that invalidated earlier drafts of these numbers |
 | [`adapters/k8s/LABELING.md`](adapters/k8s/LABELING.md) | The outcome rule, normative — the doc states it, the code implements it, and they are kept in agreement |
 | [`docs/superpowers/specs/`](docs/superpowers/specs/) | Design spec and the amendments execution forced |
 

@@ -56,8 +56,12 @@ Precedence (first match wins):
 5. **shipped** — positive evidence the code landed for this milestone:
    - the tracking issue closed between cycle start and 90 days after the milestone's
      release, or
-   - a `kubernetes/kubernetes` PR cross-referenced from that issue merged between
-     cycle start and release.
+   - a `kubernetes/kubernetes` PR cross-referenced from that issue, **milestoned for
+     this release**, was merged. Attribution is by the PR's own milestone rather
+     than by when it merged: a KEP's PRs land continuously across a multi-year
+     life, so a cycle-length window samples a slice of a stream instead of
+     identifying the work for that release. 96% of merged cross-references carry
+     a milestone.
 
    The evidence kind is recorded on the outcome event's `evidence` payload key, so
    every `shipped` row can name why it was called shipped.
@@ -67,11 +71,17 @@ Precedence (first match wins):
    **This is not a synonym for failure.** It means the outcome is unknown to this
    instrument. The usual cause is that nobody linked the implementation back to the
    tracking issue, not that the work stopped. Measured coverage: evidence exists for
-   40.7% of rows that v1 called shipped (330/811), and for 7.0% of rows it called
-   slipped (26/370). Coverage is uneven by stage — `alpha` 47.9% (123/257), `beta`
-   18.8% (49/261), `stable` 54.2% (154/284) — because closure is evidence about a
-   KEP's final stage and merges about its first.
+   64.2% of rows that v1 called shipped (521/811), and for 20.5% of rows it called
+   slipped (76/370). By stage: `alpha` 59.5% (153/257), `beta` 59.4% (155/261),
+   `stable` 72.9% (207/284).
 
+   An earlier version of this document reported 40.7% overall and `beta` at 18.8%,
+   and explained the stage gap as structural — closure being evidence about a KEP's
+   final stage and merges about its first. **That explanation was wrong.** Those
+   figures came from a timeline fetch truncated at page 1, which hid a median 64% of
+   each issue's history and hit long-lived KEPs hardest. With complete timelines and
+   milestone-based attribution, `alpha` and `beta` are within a point of each other
+   and no stage-structural effect survives.
    `unresolved` is neither positive nor negative. `POSITIVE` remains
    `{slipped, dropped, exception_denied}`.
 

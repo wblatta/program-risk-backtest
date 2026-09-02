@@ -24,29 +24,34 @@ A row is `(item, stage, milestone)`. Two independent sources answer "did the cod
 
 | evidence | definition | P(e \| shipped) | P(e \| slipped) |
 |---|---|---|---|
-| **closure** | the KEP's tracking issue closed between cycle start and 90 days after the milestone's release | 18.9% | 0.8% |
-| **merge** | a `kubernetes/kubernetes` PR cross-referenced from that issue merged between cycle start and release | 21.8% | 6.5% |
-| **either** | union of the two | **40.7%** | **7.0%** |
+| **closure** | the KEP's tracking issue closed between cycle start and 90 days after the milestone's release | 18.9% | 3.0% |
+| **merge** | a `kubernetes/kubernetes` PR cross-referenced from that issue and **milestoned for this release** was merged | 45.4% | 17.6% |
+| **either** | union of the two | **64.2%** | **20.5%** |
 
 They are complementary, not redundant — the intersection is 2.2%, and their stage
 profiles are inverse:
 
 | stage | closure | merge | union |
 |---|---|---|---|
-| `alpha` | — | — | 47.9% |
-| `beta` | — | — | 18.8% |
-| `stable` | — | — | 54.2% |
+| `alpha` | — | — | 59.5% |
+| `beta` | — | — | 59.4% |
+| `stable` | — | — | 72.9% |
 
-All figures re-measured after the closure window was bounded below at cycle start; the
-earlier 43.4%/48.2%/22.2%/58.5% set was computed with a one-sided window and is stale.
+All figures re-measured twice. The 43.4%/48.2%/22.2%/58.5% set was computed with a
+one-sided closure window; the 40.7%/47.9%/18.8%/54.2% set that replaced it was computed
+from a timeline fetch truncated at page 1, which hid a median 64% of each issue's
+history. The figures above are from complete timelines with milestone-based attribution.
 
-A tracking issue spans a KEP's whole lifecycle and closes when the KEP *finishes*, so
-closure is evidence about the final stage. Implementation PRs cluster at first delivery,
-so merges are evidence about the first. `beta` sits between both and is the weakest.
+Closure remains evidence weighted toward a KEP's final stage, since a tracking issue
+closes when the KEP finishes. But the stage gap that story was invented to explain does
+not exist: `alpha` and `beta` are within a point of each other. The apparent gap was an
+artifact of page-1 truncation, which hides late history and therefore hits the stages
+that arrive late.
 
-Both sources come from data already on disk: 644 tracking issues and their timelines,
-containing 938 `kubernetes/kubernetes` PR cross-references, each carrying `merged_at`.
-**No additional API calls are required.**
+Both sources come from the cached tracking issues and their **complete** timelines —
+1,898 merged `kubernetes/kubernetes` PR cross-references, 96% of which carry the
+milestone that attributes them. Completeness is load-bearing: an earlier fetch stopped at
+page 1 and produced 938, less than half.
 
 ### Why not `tracked/yes`
 
@@ -77,9 +82,12 @@ positive nor negative; how it is handled is the subject of §4.
 
 Every result is reported twice, side by side:
 
-- **Evidenced cut** — `unresolved` rows excluded. Roughly 774 rows, every label backed by
+- **Evidenced cut** — `unresolved` rows excluded. 965 rows, every label backed by
   evidence. This is the headline.
-- **Full cut** — `unresolved` treated as negative (not delivered). All 1,255 rows.
+- **Full cut** — `unresolved` treated as negative (not delivered). All 1,255 rows. Note
+  this is invariant to the evidence rule: `shipped` and `unresolved` are both
+  non-positive, so the full cut cannot see evidence at all and reproduces the sprint-1
+  baseline exactly.
 
 Neither is "the answer". Their difference is the finding: it shows what the signals are
 worth where process hygiene held, against what they are worth where it did not. A reader
@@ -127,20 +135,21 @@ it is the reason S8 is specified after the labeling change rather than alongside
 
 ## 6. What this design does not fix
 
-- **Coverage is capped by the source.** Only 306 of 644 KEPs have any merged
-  cross-referenced PR. A KEP whose implementation never referenced its tracking issue is
-  invisible to the merge rule no matter how the window is tuned.
-- **`beta` remains weakest** at 18.8%. Its rows are disproportionately `unresolved` and
-  therefore disproportionately excluded from the evidenced cut. Any per-stage reading must
-  say so.
+- **Coverage is capped by the source.** A KEP whose implementation never referenced its
+  tracking issue is invisible to the merge rule, and no tuning changes that. The earlier
+  "306 of 644" figure was measured on truncated timelines and understated it.
+- **Coverage is still incomplete, and the residual is not explained.** 290 rows remain
+  `unresolved`, and 105 of them (36%) have a `kep.yaml` self-report claiming delivery at
+  exactly that milestone. Those are PRs that were never cross-referenced from the tracking
+  issue, or never milestoned. The instrument cannot see them.
 - **Closure is coarse.** An issue closes once, at the end of the KEP's life; attributing
   that to a specific milestone uses a window bounded below by cycle start and above by
   release + 90 days. The upper bound is a heuristic. The lower bound is not optional:
   without it, 22 rows on the real corpus took closure that predated their cycle by up
   to sixteen months as evidence of delivery within it.
 - **A merged PR is not proof the feature shipped in that release.** It is proof code
-  landed in the window. Reverts, feature gates left off, and partial implementations are
-  all invisible.
+  milestoned for that release landed. Reverts, feature gates left off, and partial
+  implementations are all invisible.
 
 Each of these belongs in the notes' "what these numbers cannot support" section, not in a
 footnote.
