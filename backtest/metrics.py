@@ -7,6 +7,27 @@ from backtest.run import POSITIVE, UNRESOLVED, Row
 from core.model import Milestone
 
 
+# A slip is recorded when work is retargeted *after* its freeze, which in practice happens
+# during the following cycle. A Kubernetes cycle runs ~120 days, so a milestone needs a full
+# subsequent cycle plus margin before its slips are observable. 180 days is that, and the
+# corpus agrees: at 7 and 133 days since release, v1.37 and v1.36 show slip rates of 0.017
+# and 0.135 against a ~0.45 norm -- not better cycles, unfinished ones.
+CENSOR_DAYS = 180
+
+
+def uncensored_milestones(milestones, today=None, days: int = CENSOR_DAYS):
+    """Milestones old enough for their outcomes to be observable.
+
+    Right-censoring silently deflates the base rate of recent cycles, which *inflates*
+    every lift measured against it -- a signal looks better precisely where the data is
+    least complete. Excluding the tail costs sample size and buys an unbiased denominator.
+    """
+    from datetime import date as _date
+    today = today or _date.today()
+    return [m for m in milestones
+            if m.release is not None and (today - m.release).days >= days]
+
+
 def _apply_cut(rows, cut: str):
     """Evidenced: drop rows whose outcome is unknown. Full: keep them, counted as
     not-positive. The two are published side by side because their difference is the

@@ -6,7 +6,7 @@ This project answers that question with a measurement instead of an opinion. It 
 
 The answer, on 1,255 committed deliverables across six years:
 
-**An enhancement nobody has touched in eight weeks slips 2.3x more often than the base rate — and three signals now beat the release team's own scope label at the moment the commitment locks.** The best of them flags 17% of committed work at 89% precision. A second, checking whether the required approval gate has anyone attached to it, reaches 40% recall at 74% precision.
+**An enhancement nobody has touched in eight weeks slips 2.1x more often than the base rate — and three signals now beat the release team's own scope label at the moment the commitment locks.** The best of them flags 17% of committed work at 91% precision. A second, checking whether the required approval gate has anyone attached to it, reaches 41% recall at 76% precision.
 
 Then the release team's tracking label went unapplied for four consecutive cycles. The signals that read what people *did* got stronger through that period. The one that read what people *recorded* got weaker.
 
@@ -20,8 +20,8 @@ The spec committed to three hypotheses before any code existed, and to reporting
 
 | | hypothesis | verdict |
 |---|---|---|
-| **H1** | items whose **listed owners** are inactive slip more | **Half right, wrong mechanism.** Silence predicts strongly (lift 2.259). Narrowing to the *listed owners* makes it significantly worse (1.787). What predicts is that the work is untouched, not that the owner is absent — owners delegate, and the named author is often not the person implementing. |
-| **H2** | a stale dependency is a leading indicator | **Untestable on this corpus.** Both dependency signals are null on 21 and 62 firings. Only 18% of KEP READMEs reference a sibling at all, and those references carry no relation type. You cannot test a dependency hypothesis against a source that does not record dependencies. |
+| **H1** | items whose **listed owners** are inactive slip more | **Half right, wrong mechanism.** Silence predicts strongly (lift 2.101). Narrowing to the *listed owners* makes it significantly worse (1.671). What predicts is that the work is untouched, not that the owner is absent — owners delegate, and the named author is often not the person implementing. |
+| **H2** | a stale dependency is a leading indicator | **Untestable on this corpus.** Both dependency signals are null on 15 and 56 firings. Only 18% of KEP READMEs reference a sibling at all, and those references carry no relation type. You cannot test a dependency hypothesis against a source that does not record dependencies. |
 | **H3** | signals separate by lead time into actionable vs too-late | **Supported, but mostly definitional.** They do separate, and the second-best signal lands on the too-late side. But its lead is capped by its own window parameter: widen that window from 4 weeks to 6 and it becomes actionable *and* stays predictive (lift 1.694). The lead was a parameter choice, not a property of the failure. |
 
 H1's verdict was invisible for two sprints. Git author emails do not map to GitHub handles, so the signal named `hollow_owner` was in fact measuring anonymous silence — the tracking-issue timelines, and 47,573 activity events from 2,147 named people, are what made the stated hypothesis answerable at all.
@@ -86,28 +86,30 @@ Those tests place their fixtures at the *exact* boundary second and were each ve
 
 Ten signals were tested against 1,255 committed deliverables across 19 release cycles. Results are published under two cuts — `evidenced` (only rows whose outcome can be verified) and `full` (all rows, unknowns counted as not-delivered), because 23% of outcomes cannot be confirmed — and at two evaluation points: `first_fired` during the cycle, and `at_freeze` when the commitment locks. Compare the lift column within a cut and evaluation point, never across; the base rates differ and so do the questions.
 
-**At the enhancements freeze, evidenced cut** (n=965, base rate 0.393):
+**At the enhancements freeze, evidenced cut, excluding the two censored cycles** (n=855, base rate 0.434):
 
 | signal | what it looks for | fires | precision | recall | **lift** | 95% CI |
 |---|---|---|---|---|---|---|
-| `item_silent` | nobody has touched it in 8 weeks | 71 | 0.887 | 0.166 | **2.259** | 2.02 – 2.49 |
-| `gate_unassigned` | the required approval gate has no holder | 205 | 0.741 | 0.401 | **1.888** | 1.73 – 2.06 |
-| `hollow_owner` | no *listed owner* has touched it | 181 | 0.702 | 0.335 | **1.787** | 1.62 – 1.96 |
-| `process_tracked` | **the control** — the team's own scope label | 344 | 0.622 | 0.565 | **1.584** | 1.48 – 1.70 |
-| `prior_slip` | it has been retargeted before | 371 | 0.418 | 0.409 | 1.064 | 0.96 – 1.17 |
-| `org_overcommitted` | the org committed past its best-ever cycle | 701 | 0.411 | 0.760 | 1.046 | 1.00 – 1.10 |
-| `cross_org` | more than one org is involved | 436 | 0.406 | 0.467 | 1.034 | 0.94 – 1.12 |
-| `dep_inactive` | something it depends on has gone quiet | 62 | 0.371 | 0.061 | 0.945 | 0.63 – 1.26 |
-| `late_target` | committed close to the freeze | 608 | 0.309 | 0.496 | **0.787** | 0.72 – 0.85 |
-| `dep_ordering_conflict` | a dependency lands no earlier than this | 21 | 0.238 | 0.013 | 0.606 | 0.17 – 1.09 |
+| `item_silent` | nobody has touched it in 8 weeks | 68 | 0.912 | 0.167 | **2.101** | 1.91 – 2.32 |
+| `gate_unassigned` | the required approval gate has no holder | 200 | 0.755 | 0.407 | **1.740** | 1.60 – 1.90 |
+| `hollow_owner` | no *listed owner* has touched it | 171 | 0.725 | 0.334 | **1.671** | 1.51 – 1.83 |
+| `process_tracked` | **the control** — the team's own scope label | 331 | 0.637 | 0.569 | **1.469** | 1.36 – 1.57 |
+| `org_overcommitted` | the org committed past its best-ever cycle | 621 | 0.459 | 0.768 | 1.058 | 1.01 – 1.10 |
+| `prior_slip` | it has been retargeted before | 330 | 0.455 | 0.404 | 1.048 | 0.95 – 1.15 |
+| `cross_org` | more than one org is involved | 389 | 0.450 | 0.472 | 1.037 | 0.95 – 1.12 |
+| `dep_inactive` | something it depends on has gone quiet | 56 | 0.411 | 0.062 | 0.947 | 0.68 – 1.24 |
+| `late_target` | committed close to the freeze | 532 | 0.342 | 0.491 | **0.788** | 0.73 – 0.85 |
+| `dep_ordering_conflict` | a dependency lands no earlier than this | 15 | 0.333 | 0.013 | 0.768 | 0.23 – 1.39 |
 
-The ordering is identical across both cuts and both evaluation points.
+**Two cycles are excluded because their outcomes have not happened yet.** v1.36 and v1.37 released 133 and 7 days before this was written, and read slip rates of 0.135 and 0.017 against a corpus norm near 0.45 — not better cycles, unfinished ones. A slip is recorded when work is retargeted *after* its freeze, which happens during the following cycle. Including them deflates the base rate and therefore **inflates every lift measured against it**, by 5–8% here. Both views are published in [`out/k8s/`](out/k8s/).
+
+The ordering is identical across both cuts, both evaluation points and both censoring views — eight tables, one ranking.
 
 **Silence is the strongest predictor, and it beats the organisation's own judgment.** Three signals clear the `process_tracked` control, the bar sprint 1 set: *a signal that cannot beat the project's own status field is not worth reporting.* An earlier draft of this README reported the human label as comparable to the best signal; that was measured before real actor data existed and against a different form of the label, and it no longer holds.
 
-**`gate_unassigned` is the one you would actually deploy.** `item_silent` is more precise but flags a sixth of the work; the gate check reaches 40% recall at 74% precision, and the [sensitivity grid](out/k8s/sensitivity.csv) shows that running it six weeks out instead of four keeps it predictive (lift 1.694) while making it early enough to act on.
+**`gate_unassigned` is the one you would actually deploy.** `item_silent` is more precise but flags a sixth of the work; the gate check reaches 41% recall at 76% precision, and the [sensitivity grid](out/k8s/sensitivity.csv) shows that running it six weeks out instead of four keeps it predictive (lift 1.694) while making it early enough to act on.
 
-**And then the label was abandoned.** In v1.28 through v1.31 the release team applied `tracked/yes` to no row at all, before partially resuming. Across that break every activity-derived signal got *stronger* — `item_silent` from lift 1.860 to 2.398, `gate_unassigned` from 1.547 to 2.247 — while the label-derived control declined from 1.239 to 1.161.
+**And then the label was abandoned.** In v1.28 through v1.31 the release team applied `tracked/yes` to no row at all, before partially resuming. Comparing v1.19–27 against v1.28–35, every activity-derived signal got *stronger* — `item_silent` from lift 1.860 to 2.161, `gate_unassigned` from 1.547 to 1.962 — while the label-derived control declined from 1.239 to 1.073.
 
 > Broken process hygiene is not only a risk signal in itself. It destroys the signals that depend on hygiene — exactly when you most need something that does not.
 
@@ -163,7 +165,7 @@ Four recommendations, each tied to a row above rather than to a prior.
 
 The labeling rule requires positive evidence that code landed — a tracking issue closed in the milestone's window, or a `kubernetes/kubernetes` PR milestoned for that release merged. Rows with neither are `unresolved`: **290 rows, 23% of the corpus**, outcome unknown rather than failed. 105 of them carry a `kep.yaml` self-report claiming delivery, so the residual is work whose paper trail cannot be followed, not simply work that stalled.
 
-Recall is low throughout — the best instrument here flags a sixth of committed work. Most slippage is caught by none of these signals. The freeze evaluation point was chosen after seeing results, so treat specific lift values as suggestive. And this is one corpus: Kubernetes has unusually strong process hygiene, which makes it the best case for this method rather than a typical one.
+Recall is low throughout — the best instrument here flags a sixth of committed work. Most slippage is caught by none of these signals. The freeze evaluation point was chosen after seeing results, so treat specific lift values as suggestive. The 180-day censoring cutoff is a judgment that moves magnitudes but no directions. And this is one corpus: Kubernetes has unusually strong process hygiene, which makes it the best case for this method rather than a typical one.
 
 **No learned model was tested. That was a design decision, not an omission — see the next section.**
 
@@ -282,9 +284,9 @@ Run `pytest tests/conformance/` against the new adapter. Six checks; all six are
 
 ## Status
 
-Sprints 0–3 complete. Sprint 1 built the pipeline and the first three signals. Sprint 2 replaced the fallthrough labeling rule with positive evidence of delivery and added the S0 control. **Sprint 3** built the four remaining spec'd signals (S2, S3, S4a, S4b, S6), gave `activity` real actors so H1 could be tested as stated, added the dependency extraction that answers spec §14's open question, published the sensitivity grid and the `register` live view, and produced verdicts on all three hypotheses.
+Sprints 0–3 complete, and the right-censoring decision sprint 2 left open is now made. Sprint 1 built the pipeline and the first three signals. Sprint 2 replaced the fallthrough labeling rule with positive evidence of delivery and added the S0 control. **Sprint 3** built the four remaining spec'd signals (S2, S3, S4a, S4b, S6), gave `activity` real actors so H1 could be tested as stated, added the dependency extraction that answers spec §14's open question, published the sensitivity grid and the `register` live view, and produced verdicts on all three hypotheses.
 
-All ten signals in spec §7 are built. All six conformance checks pass, on 283 tests.
+All ten signals in spec §7 are built, all six of spec §14's open questions are answered in the spec beside the questions, and all six conformance checks pass on 296 tests.
 
 **Sprint 4 — the GitLab adapter — is blocked on a credential, not on design.** GitLab requires authentication for `resource_milestone_events` on every public project, and that endpoint is the timestamped history this project's entire leakage boundary depends on. Without it every `target_set` would carry a fabricated timestamp and the pipeline would emit numbers that are wrong in a way no internal check could catch. [`docs/adapters/gitlab.md`](docs/adapters/gitlab.md) records the full mapping, the measured endpoint statuses, and what unblocks it: a token with `read_api` scope.
 

@@ -8,10 +8,18 @@ Corpus: 644 Kubernetes enhancements, 68,768 timestamped events, 19 release cycle
 
 Every number here is produced by `cli.py backtest` and committed under
 [`out/k8s/`](../out/k8s/). Two cuts (`evidenced` drops rows whose outcome cannot be
-verified; `full` counts them as non-positive) and two evaluation points (`first_fired`
-during the cycle; `at_freeze` at the moment the commitment locks) are published for every
-signal. **A claim that does not say which cut and which evaluation point it uses is a
-defect.**
+verified; `full` counts them as non-positive), two evaluation points (`first_fired` during
+the cycle; `at_freeze` at the moment the commitment locks), and two censoring views are
+published for every signal. **A claim that does not say which it uses is a defect.**
+
+**Headline figures exclude the two most recent cycles.** v1.36 and v1.37 released 133 and
+7 days before this was written, and their slip rates read 0.135 and 0.017 against a corpus
+norm near 0.45. Those are not better cycles; they are unfinished ones. A slip is recorded
+when work is retargeted *after* its freeze, which happens during the following cycle, so a
+milestone needs a full subsequent cycle plus margin before its outcomes are observable.
+Including them deflates the base rate, which **inflates every lift measured against it** —
+a signal looks strongest exactly where the data is least complete. n=855 rather than 965.
+Both views are published; the difference is quantified below.
 
 ---
 
@@ -36,12 +44,12 @@ failures. Here they are.
 Silence predicts slippage, strongly and everywhere. But narrowing from *anyone* to *the
 listed owners* makes the signal consistently and significantly **worse**:
 
-| evidenced cut | fired | precision | lift | 95% CI |
+| evidenced, uncensored (n=855, base 0.434) | fired | precision | lift | 95% CI |
 |---|---|---|---|---|
-| `item_silent` — nobody at all, at freeze | 71 | 0.887 | **2.259** | [2.020, 2.489] |
-| `hollow_owner` — no listed owner, at freeze | 181 | 0.702 | 1.787 | [1.624, 1.955] |
-| `item_silent`, first-fired | 126 | 0.841 | **2.142** | [1.940, 2.373] |
-| `hollow_owner`, first-fired | 310 | 0.584 | 1.487 | [1.364, 1.606] |
+| `item_silent` — nobody at all, at freeze | 68 | 0.912 | **2.101** | [1.910, 2.323] |
+| `hollow_owner` — no listed owner, at freeze | 171 | 0.725 | 1.671 | [1.509, 1.834] |
+| `item_silent`, first-fired | 121 | 0.868 | **2.000** | [1.840, 2.191] |
+| `hollow_owner`, first-fired | 282 | 0.631 | 1.455 | [1.337, 1.575] |
 
 The first-fired intervals do not overlap. The ordering holds on both cuts, at both
 evaluation points, and at every value of N in the [sensitivity grid](../out/k8s/sensitivity.csv).
@@ -61,10 +69,10 @@ the name `hollow_owner`. The tracking-issue timelines supplied 47,573 activity e
 > *Items depending on another item that is itself late or inactive slip more often, and the
 > signal fires early enough to act on.*
 
-| evidenced, at freeze | fired | precision | lift | 95% CI |
+| evidenced, at freeze, uncensored | fired | precision | lift | 95% CI |
 |---|---|---|---|---|
-| `dep_inactive` (S4b) | 62 | 0.371 | 0.945 | [0.626, 1.264] |
-| `dep_ordering_conflict` (S4a) | 21 | 0.238 | 0.606 | [0.171, 1.088] |
+| `dep_inactive` (S4b) | 56 | 0.411 | 0.947 | [0.677, 1.237] |
+| `dep_ordering_conflict` (S4a) | 15 | 0.333 | 0.768 | [0.233, 1.394] |
 
 Both intervals span 1.0. S4b's precision sits on the base rate. Nothing here supports H2 —
 and nothing here refutes it either, because the test has almost no power.
@@ -98,7 +106,7 @@ They do separate. Median lead, first-fired, evidenced:
 | **`gate_unassigned`** | **3.29 wks** | **status** |
 
 One signal falls on the status side — and it is the second most predictive in the set
-(lift 1.888 at freeze). The most useful thing you can know arrives too late to use.
+(lift 1.740 at freeze, uncensored). The most useful thing you can know arrives too late to use.
 
 **But that split is largely an artifact of the signal's own definition.** `gate_unassigned`
 fires only once the freeze is within `M` weeks, so its lead cannot exceed `M = 4` by
@@ -115,21 +123,22 @@ materially predictive** — and it is a recommendation the a priori parameters h
 
 ## What predicts, all ten signals
 
-Evidenced cut, n=965, base rate 0.393, at the enhancements freeze. Full cut and
-first-fired in [`out/k8s/`](../out/k8s/); the ordering is identical in all four views.
+Evidenced cut, uncensored, n=855, base rate 0.434, at the enhancements freeze. Full cut,
+first-fired and the censored-inclusive views are all in [`out/k8s/`](../out/k8s/); **the
+ordering is identical in every one of the eight.**
 
 | signal | fired | precision | recall | lift | 95% CI | verdict |
 |---|---|---|---|---|---|---|
-| `item_silent` | 71 | 0.887 | 0.166 | **2.259** | [2.020, 2.489] | strongest, lowest recall |
-| `gate_unassigned` | 205 | 0.741 | 0.401 | **1.888** | [1.734, 2.064] | strong, best balance |
-| `hollow_owner` | 181 | 0.702 | 0.335 | **1.787** | [1.624, 1.955] | strong |
-| `process_tracked` (S0) | 344 | 0.622 | 0.565 | **1.584** | [1.477, 1.698] | the control |
-| `prior_slip` | 371 | 0.418 | 0.409 | 1.064 | [0.957, 1.167] | null |
-| `org_overcommitted` | 701 | 0.411 | 0.760 | 1.046 | [0.997, 1.096] | null |
-| `cross_org` | 436 | 0.406 | 0.467 | 1.034 | [0.940, 1.117] | null |
-| `dep_inactive` | 62 | 0.371 | 0.061 | 0.945 | [0.626, 1.264] | null, underpowered |
-| `late_target` | 608 | 0.309 | 0.496 | **0.787** | [0.723, 0.849] | **negative** |
-| `dep_ordering_conflict` | 21 | 0.238 | 0.013 | 0.606 | [0.171, 1.088] | null, underpowered |
+| `item_silent` | 68 | 0.912 | 0.167 | **2.101** | [1.910, 2.323] | strongest, lowest recall |
+| `gate_unassigned` | 200 | 0.755 | 0.407 | **1.740** | [1.599, 1.904] | strong, best balance |
+| `hollow_owner` | 171 | 0.725 | 0.334 | **1.671** | [1.509, 1.834] | strong |
+| `process_tracked` (S0) | 331 | 0.637 | 0.569 | **1.469** | [1.362, 1.571] | the control |
+| `org_overcommitted` | 621 | 0.459 | 0.768 | 1.058 | [1.008, 1.102] | marginal, fires on 73% |
+| `prior_slip` | 330 | 0.455 | 0.404 | 1.048 | [0.949, 1.146] | null |
+| `cross_org` | 389 | 0.450 | 0.472 | 1.037 | [0.953, 1.117] | null |
+| `dep_inactive` | 56 | 0.411 | 0.062 | 0.947 | [0.677, 1.237] | null, underpowered |
+| `late_target` | 532 | 0.342 | 0.491 | **0.788** | [0.725, 0.846] | **negative** |
+| `dep_ordering_conflict` | 15 | 0.333 | 0.013 | 0.768 | [0.233, 1.394] | null, underpowered |
 
 Four signals of ten carry real information. Four are indistinguishable from noise. One is
 significantly negative. One pair is untestable on this corpus.
@@ -148,8 +157,8 @@ that was going to fail had already failed by then.
 the same moment on the same rows. The bar sprint 1 set was that *a signal which cannot beat
 the project's own status field is not worth reporting*.
 
-At the freeze, `item_silent` (2.259), `gate_unassigned` (1.888) and `hollow_owner` (1.787)
-all clear `process_tracked` (1.584), with non-overlapping intervals in the first two cases.
+At the freeze, `item_silent` (2.101), `gate_unassigned` (1.740) and `hollow_owner` (1.671)
+all clear `process_tracked` (1.469), with non-overlapping intervals in the first two cases.
 
 **This reverses an earlier draft of this document**, which reported the human label as
 comparable to the best available signal. That draft was written when only one activity
@@ -160,12 +169,15 @@ form of the label. Both sides of it have since changed.
 
 Splitting the corpus at v1.27:
 
-| signal | v1.19–27 (base 0.466) | v1.28–37 (base 0.335) |
+| signal | v1.19–27 (base 0.466) | v1.28–35 (base 0.402) |
 |---|---|---|
-| `item_silent` | 1.860 [1.67, 2.08] | **2.398** [2.05, 2.78] |
-| `gate_unassigned` | 1.547 [1.40, 1.72] | **2.247** [1.96, 2.57] |
-| `hollow_owner` | 1.340 [1.22, 1.47] | **1.573** [1.35, 1.81] |
-| `process_tracked` (S0) | 1.239 [1.15, 1.34] | **1.161** [1.08, 1.25] |
+| `item_silent` | 1.860 [1.67, 2.08] | **2.161** [1.88, 2.49] |
+| `gate_unassigned` | 1.547 [1.40, 1.73] | **1.962** [1.71, 2.23] |
+| `process_tracked` (S0) | 1.239 [1.14, 1.34] | **1.073** [1.00, 1.15] |
+
+Both eras end at v1.35; the censored cycles are excluded from both. Including them would
+have read 2.398 and 2.247 for the first two signals — the censoring inflates precisely the
+era this section is about, which is why it is excluded here rather than only mentioned.
 
 Every activity- and process-derived signal got *stronger*. The label-derived control got
 weaker. The reason is visible in the raw firing counts: in v1.28 through v1.31 the release
@@ -187,6 +199,10 @@ v1.32.
   beside the designed first-fired metric rather than instead of it, and the ordering is
   the same under both — but the choice was made post hoc and the specific values should
   be read as suggestive.
+- **The censoring cutoff is a judgment.** 180 days is about 1.5 release cycles, chosen
+  because it is longer than the cycle in which a slip would surface and because the corpus
+  agrees with it. A different cutoff moves the magnitudes. It does not move any direction:
+  every signal keeps its sign and significance under both views.
 - **290 rows (23%) remain `unresolved`** — outcome unknown to the instrument. 105 carry a
   `kep.yaml` self-report claiming delivery, so the residual is work whose paper trail
   cannot be followed, not work that stalled.

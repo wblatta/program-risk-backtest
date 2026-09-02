@@ -74,7 +74,7 @@ def cmd_build(args) -> None:
 
 def cmd_backtest(args) -> None:
     from adapters.k8s.config import CONFIG
-    from backtest.metrics import by_org, by_stage, rows_frame, signal_metrics
+    from backtest.metrics import CENSOR_DAYS, by_org, by_stage, rows_frame, signal_metrics, uncensored_milestones
     from backtest.run import run_backtest
     from core.store import Store
     from signals import SIGNALS
@@ -85,6 +85,16 @@ def cmd_backtest(args) -> None:
         ms = [m for m in ms if m.ordinal >= args.min_minor or not m.is_scheduled]
     rows = run_backtest(evs, ms, orgs, CONFIG, SIGNALS, dict(DEFAULT_PARAMS))
     out = OUT / "k8s"; out.mkdir(parents=True, exist_ok=True)
+    # Right-censoring: milestones released too recently for their slips to have surfaced.
+    # Their rows deflate the base rate, which inflates every lift measured against it.
+    open_ids = {m.id for m in ms} - {m.id for m in uncensored_milestones(ms, days=args.censor_days)}
+    censored = [r for r in rows if r.milestone_id not in open_ids]
+    # Count only milestones that actually carry rows: the calendar holds v1.38-v1.60
+    # placeholders with no release date, which are "open" but empty and would inflate this.
+    dropped_ms = sorted({r.milestone_id for r in rows} & open_ids)
+    if dropped_ms:
+        print(f"censoring: {len(rows) - len(censored)} rows dropped from the uncensored view "
+              f"({', '.join(dropped_ms)} released < {args.censor_days} days ago)")
     by_id = {m.id: m for m in ms}
     rows_frame(rows).to_csv(out / "rows.csv", index=False)
 
@@ -102,6 +112,11 @@ def cmd_backtest(args) -> None:
         # came from an uncommitted one-off computation and could not be reproduced.
         freeze = signal_metrics(rows, by_id, L=DEFAULT_PARAMS["L"], cut=cut, evaluation="at_freeze")
         freeze.to_csv(out / sig_name.replace(".csv", "_at_freeze.csv"), index=False)
+        # Same tables with the censored tail removed. Smaller sample, unbiased denominator.
+        signal_metrics(censored, by_id, L=DEFAULT_PARAMS["L"], cut=cut).to_csv(
+            out / sig_name.replace(".csv", "_uncensored.csv"), index=False)
+        signal_metrics(censored, by_id, L=DEFAULT_PARAMS["L"], cut=cut, evaluation="at_freeze").to_csv(
+            out / sig_name.replace(".csv", "_at_freeze_uncensored.csv"), index=False)
         by_org(rows, cut=cut).to_csv(out / org_name, index=False)
         stages = by_stage(rows, cut=cut)
         stages.to_csv(out / stage_name, index=False)
@@ -243,6 +258,9 @@ def main(argv=None) -> None:
     sp.add_argument("--min-minor", type=int, default=0)
     sp.set_defaults(fn=cmd_sensitivity)
     bp = sub.add_parser("backtest")
+    bp.add_argument("--censor-days", type=int, default=180,
+                    help="exclude milestones released fewer than this many days ago from the "
+                         "uncensored tables (default 180, ~1.5 release cycles)")
     # Default 0 = every scheduled milestone (v1.19-v1.37), which is what the committed
     # out/k8s/*.csv were produced from -- a bare `cli.py backtest` must reproduce them.
     # `--min-minor N` is the opt-in "recent cycles only" cut (see docs/sprint-1-notes.md).

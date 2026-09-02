@@ -137,3 +137,33 @@ def test_unknown_evaluation_mode_is_rejected():
     import pytest as _p
     with _p.raises(ValueError):
         signal_metrics(_mode_rows(), MS, L=4, n_boot=0, evaluation="whenever")
+
+
+# --- right-censoring ---
+
+from backtest.metrics import CENSOR_DAYS, uncensored_milestones
+
+def test_recent_milestones_are_censored():
+    """A slip is recorded when work is retargeted *after* the freeze, which happens during
+    the following cycle. A milestone released last week has had no chance to accumulate
+    slips, so its rows are not observations -- they are unfinished ones."""
+    from datetime import date as _d
+    ms = [Milestone("x:v1", 1, _d(2025, 1, 10), _d(2025, 2, 10), {}),
+          Milestone("x:v2", 2, _d(2026, 7, 10), _d(2026, 8, 26), {})]
+    keep = uncensored_milestones(ms, today=_d(2026, 9, 2))
+    assert [m.id for m in keep] == ["x:v1"]
+
+def test_the_cutoff_is_a_parameter_not_a_constant():
+    from datetime import date as _d
+    ms = [Milestone("x:v2", 2, _d(2026, 7, 10), _d(2026, 4, 22), {})]
+    assert uncensored_milestones(ms, today=_d(2026, 9, 2), days=100) == ms
+    assert uncensored_milestones(ms, today=_d(2026, 9, 2), days=180) == []
+
+def test_unscheduled_milestones_are_dropped():
+    from datetime import date as _d
+    assert uncensored_milestones([Milestone("x:v9", 9, None, None, {})], today=_d(2026, 9, 2)) == []
+
+def test_default_cutoff_exceeds_one_release_cycle():
+    """The window has to be longer than the cycle that would reveal the slip, or the
+    correction does not correct anything."""
+    assert CENSOR_DAYS >= 120
