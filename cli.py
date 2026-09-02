@@ -74,6 +74,7 @@ def cmd_build(args) -> None:
 
 def cmd_backtest(args) -> None:
     from adapters.k8s.config import CONFIG
+    from backtest.conjunctions import conjunction_metrics
     from backtest.metrics import CENSOR_DAYS, by_org, by_stage, rows_frame, signal_metrics, uncensored_milestones
     from backtest.run import run_backtest
     from core.store import Store
@@ -120,12 +121,21 @@ def cmd_backtest(args) -> None:
         by_org(rows, cut=cut).to_csv(out / org_name, index=False)
         stages = by_stage(rows, cut=cut)
         stages.to_csv(out / stage_name, index=False)
+        # Signals in combination. Restricted to the four that clear the control alone:
+        # pairing null signals produces noise with a precision attached.
+        conj = conjunction_metrics(censored, ["item_silent", "gate_unassigned", "hollow_owner",
+                                              "process_tracked"], by_id, cut=cut, max_size=3)
+        conj.to_csv(out / sig_name.replace(".csv", "_conjunctions.csv"), index=False)
         print(f"\n--- {cut} cut, first-fired ---")
         print(table.to_string(index=False, float_format=lambda x: f"{x:.3f}"))
         print(f"\n--- {cut} cut, at freeze ---")
         cols = ["signal", "fired", "precision", "recall", "lift", "lift_ci_lo", "lift_ci_hi"]
         print(freeze[cols].to_string(index=False, float_format=lambda x: f"{x:.3f}"))
         print(stages.to_string(index=False, float_format=lambda x: f"{x:.3f}"))
+        print(f"\n--- {cut} cut, conjunctions (uncensored) ---")
+        print(conj[["signals", "fired", "fired_pct", "precision", "recall", "lift",
+                    "lift_ci_lo", "lift_ci_hi", "jaccard", "subset"]]
+              .to_string(index=False, float_format=lambda x: f"{x:.3f}"))
 
 
 
